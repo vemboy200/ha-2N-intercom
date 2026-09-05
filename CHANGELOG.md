@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Consolidated documentation into README.md
+- Deleted `INSTALLATION.md` and `IMPLEMENTATION_SUMMARY.md` — both were almost entirely restatements of content already in README.md (installation, configuration tables, services, troubleshooting), had drifted out of sync (stale test counts, mentions of the removed polling-interval option and relay name field), and aren't consumed separately by any quality-scale rule
+- Folded `HOMEKIT_INTEGRATION.md` down to the parts that were actually load-bearing (the doorbell→camera YAML link snippet and the entity→accessory mapping table) directly into a new README `## HomeKit` section, dropping the legacy lock-entity documentation (that entity no longer exists in the codebase) and other content duplicated elsewhere in the README; deleted the standalone file
+- All `docs-*` quality scale rules are still satisfied entirely from README.md's existing sections (Supported Devices, Features, Installation, Configuration, Services, Data Updates, Use Cases, Known Limitations, Troubleshooting)
+
 ### CI: run the test suite on every push/PR
 - New GitHub Actions workflow (`tests.yml`) runs `python3 -m unittest discover -s tests -t tests` and `validate.py`, alongside the existing hassfest/HACS checks
 - Fixed a test-harness bug this surfaced: `test_config_flow.py`'s `homeassistant.helpers.config_validation` stub was missing `config_entry_only_config_schema`, and since all test files share one `sys.modules` slot for that module, whichever stub loaded last could silently break `test_init.py`'s entire module import — meaning none of its tests actually ran in a full `discover` pass. Test count went from 426 to 463 with this fixed

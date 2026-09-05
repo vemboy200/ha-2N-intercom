@@ -40,7 +40,7 @@ Home Assistant custom integration for 2N IP Intercom systems with camera, doorbe
 ### Door / Gate / Relay control
 - **Switch** entities for door relays (momentary)
 - **Cover** entities for gate relays (garage-door style)
-- Relays auto-discovered from `/api/switch/caps` — configurable pulse duration and per-relay name via options flow
+- Relays auto-discovered from `/api/switch/caps` — device type (door/gate) and pulse duration configurable via options flow
 - Relay/input states are read from the device (`switch/status`, `io/status`), not optimistic
 - HomeKit accessory mapping per relay type
 
@@ -48,7 +48,7 @@ Home Assistant custom integration for 2N IP Intercom systems with camera, doorbe
 - UI-driven two-step setup (connection → device). Protocol and port are auto-detected (HTTPS:443 first, then HTTP:80)
 - **Reauth flow** — when credentials are rejected the integration raises `ConfigEntryAuthFailed`, so HA opens a notification asking the user to re-enter credentials instead of looping on `ConfigEntryNotReady`
 - **Reconfigure flow** — change host/port/protocol/credentials/SSL without removing the entry (HA 2024.10+)
-- **Options flow** — device features, polling interval, camera transport, and per-relay overrides (name, type, pulse duration). Relays are auto-detected from the device
+- **Options flow** — an independent-category menu (Doorbell / Camera / Relays); each category saves and closes on its own. Relays are auto-detected from the device
 - Optional "Ringing account (peer)" filter for multi-button setups (`All calls` matches every button)
 
 ## Capability Matrix
@@ -115,12 +115,31 @@ The Control4 **DS2 Door Station** and **DS2 Mini Door Station** are rebranded 2N
 - **`TwoNIntercomEntity`** base class shared by all platforms — single source for `device_info`, `available`, and `_attr_has_entity_name`
 - Platform-based: `camera`, `binary_sensor`, `switch`, `cover`, `sensor`
 
-## Manual
+## HomeKit
 
-- Install and setup: [INSTALLATION.md](INSTALLATION.md)
-- HomeKit details: [HOMEKIT_INTEGRATION.md](HOMEKIT_INTEGRATION.md)
-- Implementation overview: [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)
-- Release notes: [CHANGELOG.md](CHANGELOG.md)
+Relay switches/covers are exposed to the HA HomeKit Bridge like any other entity. The doorbell tile is different: HomeKit's "programmable doorbell" service lives on the **camera** accessory, not the binary sensor, so the doorbell sensor must be linked to the camera in the bridge's YAML config (this can't be done from the UI):
+
+```yaml
+homekit:
+  - name: 2N Intercom Doorbell
+    port: 21065
+    filter:
+      include_entities:
+        - camera.2n_intercom_camera
+    entity_config:
+      camera.2n_intercom_camera:
+        linked_doorbell_sensor: binary_sensor.2n_intercom_doorbell
+```
+
+- Don't add `binary_sensor.*_doorbell` to the HomeKit filter directly — it has no HomeKit tile of its own
+- Don't include the camera or doorbell sensor in more than one HomeKit bridge
+- Restart Home Assistant and re-add the bridge in the Home app after changing this YAML
+
+| HA entity | HomeKit accessory |
+|---|---|
+| `camera.<intercom>_camera` (linked to doorbell sensor) | Video Doorbell |
+| `switch.<intercom>_relay_N` | Switch |
+| `cover.<intercom>_relay_N` | Garage Door Opener |
 
 ## Installation
 
@@ -184,7 +203,7 @@ Options open on a menu of independent categories — pick one and it saves and c
 
 - **Doorbell** — doorbell toggle, ring-on-button-press, ring-on-incoming-call, ringing account
 - **Camera** — camera toggle, live view mode, RTSP credentials, MJPEG resolution/fps, camera source. Always offered, since it's also where the camera gets turned on
-- **Relays** *(only offered when the device has relays)* — one collapsible section per auto-detected relay: name, device type (door/gate), pulse duration
+- **Relays** *(only offered when the device has relays)* — one collapsible section per auto-detected relay: device type (door/gate), pulse duration
 
 There is no configurable polling interval — this is a local-push integration (event subscription over `/api/log/*`); the backup poll (see below) runs on a fixed, non-configurable interval.
 
@@ -202,7 +221,6 @@ There is no configurable polling interval — this is a local-push integration (
 | Camera | `mjpeg_width` | 160-2592 (px) | 1280 | MJPEG stream width |
 | Camera | `mjpeg_height` | 160-2592 (px) | 960 | MJPEG stream height |
 | Camera | `mjpeg_fps` | 1-15 | 10 | MJPEG frame rate. Lower values reduce bandwidth |
-| Relays | `relay_name` | string | `Relay N` | Display name for this relay |
 | Relays | `relay_device_type` | `door` \| `gate` | `door` | Door → switch entity, Gate → cover entity |
 | Relays | `relay_pulse_duration` | int (ms) | *(from device)* | How long the relay stays triggered. Default is the device's switchOnDuration |
 
@@ -220,8 +238,8 @@ Initial setup:
   Doorbell: yes
 
 Options flow (after setup):
-  Relay 1 → Front Door, door, 2000 ms
-  Relay 2 → Driveway Gate, gate, 15000 ms
+  Relay 1 → door, 2000 ms
+  Relay 2 → gate, 15000 ms
 ```
 
 Resulting entities:
@@ -232,8 +250,8 @@ Resulting entities:
 - `binary_sensor.home_intercom_relay_1_active` *(real cached relay state)*
 - `sensor.home_intercom_sip_registration`
 - `sensor.home_intercom_call_state` *(attribute: `active_session_id`)*
-- `switch.home_intercom_front_door`
-- `cover.home_intercom_driveway_gate`
+- `switch.home_intercom_relay_1` *(rename to "Front Door" etc. via HA's own entity settings)*
+- `cover.home_intercom_relay_2`
 
 ## Services
 
