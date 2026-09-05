@@ -1,6 +1,6 @@
 # ha-2N-intercom
 
-Home Assistant custom integration for 2N IP Intercom systems with camera, doorbell, relay, call control, and HomeKit support.
+Home Assistant custom integration for [2N IP Intercom](https://www.2n.com) systems with camera, doorbell, relay, call control, and HomeKit support.
 
 ## Supported Devices
 
