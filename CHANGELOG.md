@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### SSDP discovery, with auto-update on IP change
+- 2N devices (including Control4-rebranded DS2/DS2 Mini units) advertise themselves over SSDP; the integration now discovers them automatically instead of requiring the IP to be typed in by hand
+- Discovery matches on manufacturer (`"2N, part of Axis group"`) and extracts host/MAC/friendly name from the SSDP description XML
+- Already-configured devices are recognized by MAC and have their stored host updated (and the entry reloaded) automatically if the IP changes — no manual reconfigure needed
+- New `mac_address` field stored on setup (and backfilled for existing entries via `/api/system/info`) as the stable cross-reference, since a device's own `serialNumber` field can be a rebrander's part number rather than the MAC (confirmed on a Control4 DS2 unit)
+- `quality_scale.yaml`: `discovery` and `discovery-update-info` marked `done` (were `exempt`)
+- Fixes #11
+
+### Remove duplicate top-level icon/logo files
+- `icon.png`, `icon.svg`, `icon@2x.png`, `logo.png`, `logo@2x.png` were duplicated at the integration root and under `brand/`; removed the root copies since nothing referenced them and `brand/` is the canonical location
+
 ### Document Control4 DS2 / DS2 Mini Door Station support
 - Added the Control4 DS2 Door Station (rebranded IP Verso) and DS2 Mini Door Station (rebranded IP Solo) to the Supported Devices table
 - New "Control4 DS2 / DS2 Mini Door Stations" section under Authentication documents the Composer Pro → driver Properties → Advanced steps needed to retrieve HTTP API credentials on these units, since they aren't exposed through 2N's own web admin the way they are on a plain 2N device
