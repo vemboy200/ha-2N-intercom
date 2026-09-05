@@ -2,6 +2,15 @@
 
 Home Assistant custom integration for [2N IP Intercom](https://www.2n.com) systems with camera, doorbell, relay, call control, and HomeKit support.
 
+## Use Cases
+
+- **Video doorbell** — camera snapshot + event-driven ring notification via mobile app
+- **Door opening** — trigger relay via switch entity from automations, dashboards, or HomeKit
+- **Gate control** — garage-door-style open/close via cover entity
+- **Call management** — answer or reject incoming calls from automations using the `answer_call` / `hangup_call` services
+- **Multi-button setups** — filter doorbell events by ringing account (peer) to distinguish front door from side entrance
+- **HomeKit bridge** — expose camera as video doorbell, relays as switches/garage doors in Apple Home
+
 ## Supported Devices
 
 | Device | Firmware | Status | Notes |
@@ -323,14 +332,6 @@ The integration uses two data channels:
 - **Backup polling (safety net)** — the coordinator polls status endpoints (`switch/status`, `io/status`, `phone/status`, `call/status`, `switch/caps`) on a fixed 60-second interval, not user-configurable. This catches any events missed during subscription gaps but does not perform ring detection — ring detection is exclusively event-driven
 - **Static caps** — `switch/caps`, `io/caps`, and camera transport info are fetched once at setup and cached. Switch caps are also refreshed on `ConfigurationChanged` / `CapabilitiesChanged` events and on every poll cycle as a safety net
 
-## Use Cases
-
-- **Video doorbell** — camera snapshot + event-driven ring notification via mobile app
-- **Door opening** — trigger relay via switch entity from automations, dashboards, or HomeKit
-- **Gate control** — garage-door-style open/close via cover entity
-- **Call management** — answer or reject incoming calls from automations using the `answer_call` / `hangup_call` services
-- **Multi-button setups** — filter doorbell events by ringing account (peer) to distinguish front door from side entrance
-- **HomeKit bridge** — expose camera as video doorbell, relays as switches/garage doors in Apple Home
 
 ## Known Limitations
 
