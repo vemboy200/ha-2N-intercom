@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Document Control4 DS2 / DS2 Mini Door Station support
+- Added the Control4 DS2 Door Station (rebranded IP Verso) and DS2 Mini Door Station (rebranded IP Solo) to the Supported Devices table
+- New "Control4 DS2 / DS2 Mini Door Stations" section under Authentication documents the Composer Pro → driver Properties → Advanced steps needed to retrieve HTTP API credentials on these units, since they aren't exposed through 2N's own web admin the way they are on a plain 2N device
+- Documented two known Control4-specific caveats: physical I/O (button/relay) that's wired into Control4's own hardware rather than through the 2N board can appear to work at the API level while doing nothing physically; and the doorbell sensor can also ring when Control4 places a call into the door station, not only on a real button press
+- Fixes #10
+
 ## 1.3.1 - 2026-04-12
 
 ### Documentation sync and quality scale
