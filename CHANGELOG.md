@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 - 2026-09-04
 
 ### Consolidated documentation into README.md
 - Deleted `INSTALLATION.md` and `IMPLEMENTATION_SUMMARY.md` — both were almost entirely restatements of content already in README.md (installation, configuration tables, services, troubleshooting), had drifted out of sync (stale test counts, mentions of the removed polling-interval option and relay name field), and aren't consumed separately by any quality-scale rule
