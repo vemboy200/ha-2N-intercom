@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Ring on incoming call is now optional
+- New `ring_on_call` option (initial setup + options flow, default **on**) gates whether `CallStateChanged`/`CallSessionStateChanged` events set the doorbell ring, independent of `ring_on_keypress`. Disable it when something other than a physical button press can place a call to the device (e.g. an intercom/page-through call from a home automation system) — the separate Call state sensor keeps tracking calls either way, and a call ending no longer clears a ring set by an unrelated button press
+- Fixes a false-positive doorbell ring reported against a Control4-integrated DS2 door station, where the home automation system placing a call into the intercom was indistinguishable from a real button press
+
+### Coordinator tolerates transient auth errors before reauth
+- A single stale-nonce `401` no longer immediately raises `ConfigEntryAuthFailed` and forces the user to reopen the config flow — the device recovers on the next request once the digest auth session refreshes its nonce
+- `NUM_AUTH_ERRORS = 3` consecutive auth errors are now tolerated (raising `UpdateFailed` in the meantime) before declaring an actual auth failure; the counter resets on the next successful update
+
+### Options flow reorganized into an independent-category menu
+- Options now open on a menu (Doorbell / Camera / Relays) instead of a forced linear wizard — pick a category and it saves and closes on its own, no need to walk through the others
+- Removed the "Device" category and its duplicate `name` field — renaming now goes through Home Assistant's own device dialog instead of a field that shadowed it; the camera toggle moved into the Camera step, which is always offered since it's also where the camera gets turned back on
+- Multi-relay overrides collapsed onto a single page (one collapsible section per relay) instead of a separate wizard page per relay
+- Removed the user-configurable backup-polling interval (`scan_interval`) — this is a local-push integration (event subscription over `/api/log/*`); the safety-net poll is now a fixed, non-configurable 60 s, matching `quality_scale.yaml`'s `appropriate-polling` rule and the field's own long-standing "backup only" description
+
 ### Ring on button press (KeyPressed events)
 - The doorbell binary sensor now also triggers on the device's `KeyPressed` log event — a physical button press rings even when it never becomes a SIP call. Devices with an empty directory (no call destination configured for the button) previously produced no ring at all, because ring detection was exclusively call-state driven
 - New `ring_on_keypress` option (initial setup + options flow, default **on**) controls the behavior; disable it to keep strictly call-based ring detection (for example on multi-button installs that rely on the `called_id` peer filter, which cannot apply to button presses)

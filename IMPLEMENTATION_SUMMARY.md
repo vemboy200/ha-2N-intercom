@@ -216,4 +216,4 @@ The integration is feature-complete for the single-family-house IP Verso baselin
 
 *Status:* Production-ready against 2N IP Verso firmware `2.50.0.76.2`
 *Version:* 1.3.1
-*Repository:* [savek-cc/ha-2N-intercom](https://github.com/savek-cc/ha-2N-intercom) (fork of [mastalir1980/ha-2N-intercom](https://github.com/mastalir1980/ha-2N-intercom))
+*Repository:* [vemboy200/ha-2N-intercom](https://github.com/vemboy200/ha-2N-intercom) (fork of [mastalir1980/ha-2N-intercom](https://github.com/mastalir1980/ha-2N-intercom), building on prior work by [savek-cc](https://github.com/savek-cc/ha-2N-intercom))

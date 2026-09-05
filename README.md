@@ -112,7 +112,7 @@ The integration provides optional **RTSP Username** and **RTSP Password** fields
 
 1. Open HACS → Integrations
 2. Three-dot menu → Custom repositories
-3. Add `https://github.com/savek-cc/ha-2N-intercom` as an integration
+3. Add `https://github.com/vemboy200/ha-2N-intercom` as an integration
 4. Install **2N Intercom**
 5. Restart Home Assistant
 
@@ -363,7 +363,7 @@ custom_components/2n_intercom/
 ### Tests
 
 ```bash
-python3 -m unittest discover -s tests -t tests   # 442/442
+python3 -m unittest discover -s tests -t tests
 python3 validate.py                               # manifest + HACS compliance
 python3 -m py_compile custom_components/2n_intercom/*.py
 ```
@@ -378,8 +378,14 @@ See [LICENSE](LICENSE).
 
 ## Credits
 
-Originally created by [mastalir1980](https://github.com/mastalir1980/ha-2N-intercom) for the Home Assistant community. The HA 2026.4+ remediation, MJPEG-first camera, push-driven event handling, real-state status entities, answer/hangup services, and dual-auth client live in this [savek-cc](https://github.com/savek-cc/ha-2N-intercom) fork.
+Originally created by [mastalir1980](https://github.com/mastalir1980/ha-2N-intercom) for the Home Assistant community. The HA 2026.4+ remediation, MJPEG-first camera, push-driven event handling, real-state status entities, answer/hangup services, and dual-auth client were built by [savek-cc](https://github.com/savek-cc/ha-2N-intercom).
+
+This fork is maintained by [vemboy200](https://github.com/vemboy200/ha-2N-intercom), building on that work with:
+- `ring_on_call` — lets the doorbell ignore incoming SIP calls that aren't real button presses (e.g. an intercom/page-through call from a home automation system), so it can't false-positive on installs where something other than the physical button can call the device
+- An options flow reorganized into an independent-category menu (Doorbell / Camera / Relays) — pick one and it saves and closes, no forced linear wizard
+- Multi-relay overrides collapsed onto a single page (one section per relay) instead of one page per relay
+- Removed the user-configurable backup-polling interval — this is a local-push integration; the safety-net poll is now fixed and non-configurable
 
 ## Support
 
-Open an issue on the [savek-cc fork](https://github.com/savek-cc/ha-2N-intercom/issues).
+Open an issue on [this fork](https://github.com/vemboy200/ha-2N-intercom/issues).
