@@ -9,12 +9,10 @@ CONF_VERIFY_SSL = "verify_ssl"
 CONF_ENABLE_CAMERA = "enable_camera"
 CONF_ENABLE_DOORBELL = "enable_doorbell"
 CONF_RING_ON_KEYPRESS = "ring_on_keypress"
+CONF_RING_ON_CALL = "ring_on_call"
 CONF_RELAYS = "relays"
 CONF_CALLED_ID = "called_id"
 CALLED_ID_ALL = "__all__"
-
-# General tuning keys
-CONF_SCAN_INTERVAL = "scan_interval"
 
 # Camera configuration keys
 CONF_LIVE_VIEW_MODE = "live_view_mode"
@@ -48,9 +46,8 @@ DEFAULT_VERIFY_SSL = False
 DEFAULT_ENABLE_CAMERA = True
 DEFAULT_ENABLE_DOORBELL = True
 DEFAULT_RING_ON_KEYPRESS = True
-DEFAULT_SCAN_INTERVAL = 60  # seconds — events deliver real-time updates; polling is a safety net
-SCAN_INTERVAL_MIN = 2  # seconds — below this we hammer the device for no benefit
-SCAN_INTERVAL_MAX = 600  # seconds — events handle real-time; polling only needs to catch missed updates
+DEFAULT_RING_ON_CALL = True
+DEFAULT_SCAN_INTERVAL = 60  # seconds — fixed backup poll; events deliver real-time updates. Not user-configurable: this is a local-push integration
 DEFAULT_PULSE_DURATION = 2000  # milliseconds — door default
 DEFAULT_GATE_DURATION = 15000  # milliseconds — gate default
 

@@ -2182,3 +2182,87 @@ class KeyPressedRingTests(unittest.IsolatedAsyncioTestCase):
     def test_subscription_excludes_keypress_when_disabled(self) -> None:
         c = self._make_coordinator(ring_on_keypress=False)
         self.assertNotIn("KeyPressed", c._log_event_names())
+
+
+class RingOnCallToggleTests(unittest.IsolatedAsyncioTestCase):
+    """Tests for the ring_on_call toggle gating CallStateChanged-driven rings."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.coordinator_module = load_coordinator_module()
+
+    def _make_coordinator(self, **kwargs):
+        hass = types.SimpleNamespace()
+        api = types.SimpleNamespace()
+        return self.coordinator_module.TwoNIntercomCoordinator(hass, api, **kwargs)
+
+    def _make_data(self, c):
+        return self.coordinator_module.TwoNIntercomData(
+            call_status={}, last_ring_time=None, caller_info=None,
+            active_session_id=None, available=True, phone_status={},
+            switch_caps={}, switch_status={}, io_caps={}, io_status={},
+        )
+
+    def test_default_ring_on_call_is_true(self) -> None:
+        c = self._make_coordinator()
+        self.assertTrue(c._ring_on_call)
+
+    def test_call_ringing_triggers_ring_pulse_by_default(self) -> None:
+        c = self._make_coordinator()
+        c.data = self._make_data(c)
+        updated = c._process_log_event(
+            {
+                "event": "CallStateChanged",
+                "params": {"state": "ringing", "direction": "incoming"},
+            }
+        )
+        self.assertTrue(updated)
+        self.assertTrue(c._ring_detected)
+
+    def test_call_ringing_ignored_when_ring_on_call_disabled(self) -> None:
+        c = self._make_coordinator(ring_on_call=False)
+        c.data = self._make_data(c)
+        updated = c._process_log_event(
+            {
+                "event": "CallStateChanged",
+                "params": {"state": "ringing", "direction": "incoming"},
+            }
+        )
+        # The call-state sensor still needs the event applied.
+        self.assertTrue(updated)
+        self.assertFalse(c._ring_detected)
+        self.assertEqual(c._last_call_state_value, "ringing")
+
+    def test_call_terminal_state_does_not_clear_keypress_ring_when_disabled(
+        self,
+    ) -> None:
+        """A call ending must not wipe out an unrelated KeyPressed ring."""
+        c = self._make_coordinator(ring_on_call=False)
+        c.data = self._make_data(c)
+        c._process_log_event(
+            {"event": "KeyPressed", "params": {"key": "main_button"}}
+        )
+        self.assertTrue(c._ring_detected)
+        c._process_log_event(
+            {
+                "event": "CallStateChanged",
+                "params": {"state": "idle", "direction": "incoming"},
+            }
+        )
+        self.assertTrue(c._ring_detected)
+
+    def test_call_session_ringing_ignored_when_ring_on_call_disabled(self) -> None:
+        c = self._make_coordinator(ring_on_call=False)
+        c.data = self._make_data(c)
+        updated = c._process_log_event(
+            {
+                "event": "CallSessionStateChanged",
+                "params": {
+                    "state": "ringing",
+                    "direction": "incoming",
+                    "sessionNumber": "1",
+                },
+            }
+        )
+        self.assertTrue(updated)
+        self.assertFalse(c._ring_detected)

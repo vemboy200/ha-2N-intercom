@@ -20,17 +20,28 @@
         "description": "Nakonfigurujte funkce zařízení. Relé lze nastavit později v možnostech integrace.",
         "data": {
           "name": "Název",
-          "enable_camera": "Povolit kameru",
-          "enable_doorbell": "Povolit zvonek",
-          "ring_on_keypress": "Zvonit při stisku tlačítka",
-          "called_id": "Volaný účet (peer)"
+          "enable_camera": "Povolit kameru"
         },
         "data_description": {
           "name": "Zobrazený název v Home Assistant",
-          "enable_camera": "Vytvoří entitu kamery pro snímky i stream",
-          "enable_doorbell": "Vytvoří entitu zvonku pro detekci zvonění",
-          "ring_on_keypress": "Považovat fyzický stisk tlačítka (událost KeyPressed) za zazvonění, i když stisk nezahájí SIP hovor — nutné pro zařízení s prázdným adresářem. Poznámka: filtr vyzváněcího účtu se na stisky tlačítek nevztahuje.",
-          "called_id": "Vyberte účet, na který se zvoní. Všechny hovory = zvonění pro všechna tlačítka."
+          "enable_camera": "Vytvoří entitu kamery pro snímky i stream"
+        },
+        "sections": {
+          "doorbell": {
+            "name": "Zvonek",
+            "data": {
+              "enable_doorbell": "Povolit zvonek",
+              "ring_on_keypress": "Zvonit při stisku tlačítka",
+              "ring_on_call": "Zvonit při příchozím hovoru",
+              "called_id": "Volaný účet (peer)"
+            },
+            "data_description": {
+              "enable_doorbell": "Vytvoří entitu zvonku pro detekci zvonění",
+              "ring_on_keypress": "Považovat fyzický stisk tlačítka (událost KeyPressed) za zazvonění, i když stisk nezahájí SIP hovor — nutné pro zařízení s prázdným adresářem. Poznámka: filtr vyzváněcího účtu se na stisky tlačítek nevztahuje.",
+              "ring_on_call": "Považovat příchozí SIP hovor (událost CallStateChanged) za zazvonění. Tuto možnost vypněte, pokud na toto zařízení může volat i něco jiného než fyzický stisk tlačítka (např. interkomový/průchozí hovor ze systému domácí automatizace) a pro tento případ používáte samostatný senzor Stav hovoru.",
+              "called_id": "Vyberte účet, na který se zvoní. Všechny hovory = zvonění pro všechna tlačítka."
+            }
+          }
         }
       }
     },
@@ -47,29 +58,25 @@
     "step": {
       "init": {
         "title": "Možnosti 2N Intercom",
-        "data": {
-          "enable_camera": "Povolit kameru",
-          "enable_doorbell": "Povolit zvonek",
-          "ring_on_keypress": "Zvonit při stisku tlačítka"
+        "menu_options": {
+          "doorbell": "Zvonek",
+          "camera": "Kamera",
+          "relays": "Relé"
         }
       },
-      "device": {
-        "title": "Možnosti 2N Intercom - Zařízení",
-        "description": "Upravte funkce zařízení. Relé jsou automaticky detekována ze zařízení — názvy a typy lze upravit v dalším kroku.",
+      "doorbell": {
+        "title": "Možnosti 2N Intercom - Zvonek",
+        "description": "Nastavte, jak entita zvonku detekuje zazvonění.",
         "data": {
-          "name": "Název",
-          "enable_camera": "Povolit kameru",
           "enable_doorbell": "Povolit zvonek",
           "ring_on_keypress": "Zvonit při stisku tlačítka",
-          "scan_interval": "Záložní interval dotazování (sekundy)",
+          "ring_on_call": "Zvonit při příchozím hovoru",
           "called_id": "Volaný účet (peer)"
         },
         "data_description": {
-          "name": "Zobrazený název v Home Assistant",
-          "enable_camera": "Vytvoří entitu kamery",
           "enable_doorbell": "Vytvoří entitu zvonku",
           "ring_on_keypress": "Považovat fyzický stisk tlačítka (událost KeyPressed) za zazvonění, i když stisk nezahájí SIP hovor — nutné pro zařízení s prázdným adresářem. Poznámka: filtr vyzváněcího účtu se na stisky tlačítek nevztahuje.",
-          "scan_interval": "Záložní interval dotazování (2-600 s). Události přinášejí aktualizace v reálném čase; dotazování slouží jen jako záchranná síť. Výchozích 60 s vyhovuje většině instalací.",
+          "ring_on_call": "Považovat příchozí SIP hovor (událost CallStateChanged) za zazvonění. Tuto možnost vypněte, pokud na toto zařízení může volat i něco jiného než fyzický stisk tlačítka (např. interkomový/průchozí hovor ze systému domácí automatizace) a pro tento případ používáte samostatný senzor Stav hovoru.",
           "called_id": "Vyberte účet, na který se zvoní. Všechny hovory = zvonění pro všechna tlačítka."
         }
       },
@@ -77,6 +84,7 @@
         "title": "Možnosti 2N Intercom - Kamera",
         "description": "Vyladění video streamu z 2N kamery v Home Assistantu. Snížením rozlišení a snímkové frekvence MJPEG výrazně ušetříte přenos dat na nástěnkách, kde je kamera trvale viditelná.",
         "data": {
+          "enable_camera": "Povolit kameru",
           "live_view_mode": "Režim živého náhledu",
           "camera_source": "Zdroj kamery",
           "mjpeg_width": "Šířka MJPEG (pixely)",
@@ -86,6 +94,7 @@
           "rtsp_password": "RTSP heslo"
         },
         "data_description": {
+          "enable_camera": "Vytvoří entitu kamery",
           "live_view_mode": "auto upřednostní RTSP, pak MJPEG, případně jen JPEG snímky",
           "camera_source": "Který senzor zařízení použít — internal je vestavěná kamera, external je sekundární modul (pokud je osazen)",
           "mjpeg_width": "Šířka MJPEG streamu vyžádaného od zařízení (např. 640)",
@@ -95,20 +104,62 @@
           "rtsp_password": "Heslo k účtu RTSP streamovací služby"
         }
       },
-      "relay": {
-        "title": "Možnosti 2N Intercom - Relé {relay_number}",
-        "description": "Nastavení automaticky detekovaného relé {relay_number}. Pro dveřní zámky obvykle ~2000 ms puls, pro křídlová vrata ~15000 ms.",
-        "data": {
-          "relay_number": "Číslo relé",
-          "relay_name": "Název relé",
-          "relay_device_type": "Typ zařízení",
-          "relay_pulse_duration": "Doba pulsu (milisekundy)"
-        },
-        "data_description": {
-          "relay_number": "Fyzické číslo relé na zařízení (automaticky detekováno)",
-          "relay_name": "Zobrazený název relé v Home Assistant",
-          "relay_device_type": "Dveře vytvoří spínač, vrata vytvoří kryt",
-          "relay_pulse_duration": "Délka spínacího pulsu odeslaného relé (ms). Výchozí hodnota je switchOnDuration nakonfigurovaná na zařízení."
+      "relays": {
+        "title": "Možnosti 2N Intercom - Relé",
+        "description": "Nastavení automaticky detekovaných relé, každé relé má vlastní rozbalovací sekci. Pro dveřní zámky obvykle ~2000 ms puls, pro křídlová vrata ~15000 ms.",
+        "sections": {
+          "relay_1": {
+            "name": "Relé 1",
+            "data": {
+              "relay_name": "Název relé",
+              "relay_device_type": "Typ zařízení",
+              "relay_pulse_duration": "Doba pulsu (milisekundy)"
+            },
+            "data_description": {
+              "relay_name": "Zobrazený název relé v Home Assistant",
+              "relay_device_type": "Dveře vytvoří spínač, vrata vytvoří kryt",
+              "relay_pulse_duration": "Délka spínacího pulsu odeslaného relé (ms). Výchozí hodnota je switchOnDuration nakonfigurovaná na zařízení."
+            }
+          },
+          "relay_2": {
+            "name": "Relé 2",
+            "data": {
+              "relay_name": "Název relé",
+              "relay_device_type": "Typ zařízení",
+              "relay_pulse_duration": "Doba pulsu (milisekundy)"
+            },
+            "data_description": {
+              "relay_name": "Zobrazený název relé v Home Assistant",
+              "relay_device_type": "Dveře vytvoří spínač, vrata vytvoří kryt",
+              "relay_pulse_duration": "Délka spínacího pulsu odeslaného relé (ms). Výchozí hodnota je switchOnDuration nakonfigurovaná na zařízení."
+            }
+          },
+          "relay_3": {
+            "name": "Relé 3",
+            "data": {
+              "relay_name": "Název relé",
+              "relay_device_type": "Typ zařízení",
+              "relay_pulse_duration": "Doba pulsu (milisekundy)"
+            },
+            "data_description": {
+              "relay_name": "Zobrazený název relé v Home Assistant",
+              "relay_device_type": "Dveře vytvoří spínač, vrata vytvoří kryt",
+              "relay_pulse_duration": "Délka spínacího pulsu odeslaného relé (ms). Výchozí hodnota je switchOnDuration nakonfigurovaná na zařízení."
+            }
+          },
+          "relay_4": {
+            "name": "Relé 4",
+            "data": {
+              "relay_name": "Název relé",
+              "relay_device_type": "Typ zařízení",
+              "relay_pulse_duration": "Doba pulsu (milisekundy)"
+            },
+            "data_description": {
+              "relay_name": "Zobrazený název relé v Home Assistant",
+              "relay_device_type": "Dveře vytvoří spínač, vrata vytvoří kryt",
+              "relay_pulse_duration": "Délka spínacího pulsu odeslaného relé (ms). Výchozí hodnota je switchOnDuration nakonfigurovaná na zařízení."
+            }
+          }
         }
       }
     }

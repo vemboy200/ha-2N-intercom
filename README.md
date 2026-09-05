@@ -142,7 +142,7 @@ All entities, devices, and automation references created by this integration are
 The setup wizard has two steps:
 
 1. **Connection** — host, username, password. Protocol (HTTPS/HTTP) and port (443/80) are auto-detected
-2. **Device** — display name, enable camera, enable doorbell, optional ringing account (peer)
+2. **Device** — display name, enable camera, and a collapsible **Doorbell** section (enable doorbell, ring on button press, ring on incoming call, ringing account)
 
 Relays are **not** configured during initial setup. The integration auto-discovers enabled relays from the device's `/api/switch/caps` endpoint and creates switch entities automatically. To override relay names, types (door/gate), or pulse durations, open the **Options** flow after setup.
 
@@ -155,28 +155,30 @@ Relays are **not** configured during initial setup. The integration auto-discove
 | Connection | `password` | string | *(required)* | Device API password |
 | Device | `name` | string | *(auto-detected)* | Display name in Home Assistant |
 | Device | `enable_camera` | bool | `true` | Create the camera entity |
-| Device | `enable_doorbell` | bool | `true` | Create the doorbell binary sensor |
-| Device | `ring_on_keypress` | bool | `true` | Ring on physical button press (`KeyPressed` event), even when the press does not start a SIP call |
-| Device | `called_id` | string | `All calls` | Ringing account / peer filter |
+| Device → Doorbell | `enable_doorbell` | bool | `true` | Create the doorbell binary sensor |
+| Device → Doorbell | `ring_on_keypress` | bool | `true` | Ring on physical button press (`KeyPressed` event), even when the press does not start a SIP call |
+| Device → Doorbell | `ring_on_call` | bool | `true` | Ring on an incoming SIP call (`CallStateChanged`/`CallSessionStateChanged`). Disable if something other than a physical button press can place a call to this device (e.g. an intercom/page-through call from a home automation system) — the separate Call state sensor still tracks calls either way |
+| Device → Doorbell | `called_id` | string | `All calls` | Ringing account / peer filter. Does not apply to button presses |
 
 ### Options flow parameters
 
 After initial setup, open the integration's **Options** (Settings → Devices & Services → 2N Intercom → **Configure**) to change behavioral settings without removing the entry. Connection settings are changed through the **Reconfigure** flow instead.
 
-The options flow has up to three steps:
+Options open on a menu of independent categories — pick one and it saves and closes immediately, no need to walk through the others. There's no separate "Device" category: renaming the device uses Home Assistant's own device dialog (Settings → Devices & Services → the device itself), not something this integration duplicates.
 
-1. **Device** — name, feature toggles, backup polling interval, ringing account
-2. **Camera** *(only when camera is enabled)* — live view mode, RTSP credentials, MJPEG resolution/fps, camera source
-3. **Relay** *(one per auto-detected relay)* — name, device type (door/gate), pulse duration
+- **Doorbell** — doorbell toggle, ring-on-button-press, ring-on-incoming-call, ringing account
+- **Camera** — camera toggle, live view mode, RTSP credentials, MJPEG resolution/fps, camera source. Always offered, since it's also where the camera gets turned on
+- **Relays** *(only offered when the device has relays)* — one collapsible section per auto-detected relay: name, device type (door/gate), pulse duration
+
+There is no configurable polling interval — this is a local-push integration (event subscription over `/api/log/*`); the backup poll (see below) runs on a fixed, non-configurable interval.
 
 | Step | Parameter | Type | Default | Description |
 |---|---|---|---|---|
-| Device | `name` | string | *(from setup)* | Display name |
-| Device | `enable_camera` | bool | `true` | Toggle camera entity |
-| Device | `enable_doorbell` | bool | `true` | Toggle doorbell entity |
-| Device | `ring_on_keypress` | bool | `true` | Ring on physical button press (`KeyPressed` event), even when the press does not start a SIP call. The `called_id` filter does not apply to button presses |
-| Device | `scan_interval` | 2-600 (s) | 60 | Backup polling interval. Events deliver real-time updates; polling only runs as a safety net |
-| Device | `called_id` | string | `All calls` | Ringing account / peer filter |
+| Doorbell | `enable_doorbell` | bool | `true` | Toggle doorbell entity |
+| Doorbell | `ring_on_keypress` | bool | `true` | Ring on physical button press (`KeyPressed` event), even when the press does not start a SIP call. The `called_id` filter does not apply to button presses |
+| Doorbell | `ring_on_call` | bool | `true` | Ring on an incoming SIP call. Disable to rely solely on button presses when something else (e.g. Control4) can also place calls to this device |
+| Doorbell | `called_id` | string | `All calls` | Ringing account / peer filter |
+| Camera | `enable_camera` | bool | `true` | Toggle camera entity |
 | Camera | `live_view_mode` | `auto` \| `rtsp` \| `mjpeg` \| `jpeg_only` | `auto` | Camera live view transport. `auto` picks RTSP if licensed and RTSP credentials are set, then MJPEG, then snapshots |
 | Camera | `rtsp_username` | string | *(empty)* | RTSP server username (from the 2N RTSP user database, **not** the HTTP API account) |
 | Camera | `rtsp_password` | string | *(empty)* | RTSP server password |
@@ -184,9 +186,9 @@ The options flow has up to three steps:
 | Camera | `mjpeg_width` | 160-2592 (px) | 1280 | MJPEG stream width |
 | Camera | `mjpeg_height` | 160-2592 (px) | 960 | MJPEG stream height |
 | Camera | `mjpeg_fps` | 1-15 | 10 | MJPEG frame rate. Lower values reduce bandwidth |
-| Relay | `relay_name` | string | `Relay N` | Display name for this relay |
-| Relay | `relay_device_type` | `door` \| `gate` | `door` | Door → switch entity, Gate → cover entity |
-| Relay | `relay_pulse_duration` | int (ms) | *(from device)* | How long the relay stays triggered. Default is the device's switchOnDuration |
+| Relays | `relay_name` | string | `Relay N` | Display name for this relay |
+| Relays | `relay_device_type` | `door` \| `gate` | `door` | Door → switch entity, Gate → cover entity |
+| Relays | `relay_pulse_duration` | int (ms) | *(from device)* | How long the relay stays triggered. Default is the device's switchOnDuration |
 
 ### Example: single-family house (door + gate)
 
@@ -284,7 +286,7 @@ The integration negotiates Basic vs Digest per request — see the **Authenticat
 The integration uses two data channels:
 
 - **Event subscriptions (primary)** — `/api/log/subscribe` + `/api/log/pull` long-poll loop. Subscribes to `CallStateChanged`, `CallSessionStateChanged`, `SwitchStateChanged`, `InputChanged`, `OutputChanged`, `RegistrationStateChanged`, `ConfigurationChanged`, `CapabilitiesChanged`, `DeviceState`, and (when available) `MotionDetected`. State changes arrive within ~1 second. The listener auto-resubscribes with exponential backoff on failures and forces a full baseline refresh after each reconnect
-- **Backup polling (safety net)** — the coordinator polls status endpoints (`switch/status`, `io/status`, `phone/status`, `call/status`, `switch/caps`) at the configured interval (default 60 seconds). This catches any events missed during subscription gaps but does not perform ring detection — ring detection is exclusively event-driven
+- **Backup polling (safety net)** — the coordinator polls status endpoints (`switch/status`, `io/status`, `phone/status`, `call/status`, `switch/caps`) on a fixed 60-second interval, not user-configurable. This catches any events missed during subscription gaps but does not perform ring detection — ring detection is exclusively event-driven
 - **Static caps** — `switch/caps`, `io/caps`, and camera transport info are fetched once at setup and cached. Switch caps are also refreshed on `ConfigurationChanged` / `CapabilitiesChanged` events and on every poll cycle as a safety net
 
 ## Use Cases

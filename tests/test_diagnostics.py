@@ -155,7 +155,7 @@ class FakeConfigEntry:
             "username": "admin",
             "password": "super-secret",
         }
-        self.options = {"scan_interval": 5}
+        self.options = {"ring_on_call": True}
         self.runtime_data = None
 
 

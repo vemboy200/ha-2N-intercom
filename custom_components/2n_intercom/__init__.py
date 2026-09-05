@@ -26,21 +26,19 @@ from .const import (
     CONF_PROTOCOL,
     CONF_RELAY_DEVICE_TYPE,
     CONF_RELAYS,
+    CONF_RING_ON_CALL,
     CONF_RING_ON_KEYPRESS,
     CONF_RTSP_PASSWORD,
     CONF_RTSP_USERNAME,
-    CONF_SCAN_INTERVAL,
     CONF_VERIFY_SSL,
     DEFAULT_ENABLE_CAMERA,
     DEFAULT_ENABLE_DOORBELL,
     DEFAULT_PROTOCOL,
+    DEFAULT_RING_ON_CALL,
     DEFAULT_RING_ON_KEYPRESS,
-    DEFAULT_SCAN_INTERVAL,
     DEFAULT_VERIFY_SSL,
     DEVICE_TYPE_GATE,
     DOMAIN,
-    SCAN_INTERVAL_MAX,
-    SCAN_INTERVAL_MIN,
 )
 from .coordinator import TwoNIntercomCoordinator, TwoNIntercomRuntimeData
 
@@ -384,25 +382,16 @@ async def async_setup_entry(
         rtsp_password=rtsp_password,
     )
 
-    # Honour the per-entry polling interval from the options flow when set,
-    # falling back to the module default. Out-of-bounds values are clamped so
-    # a hand-edited entry can't accidentally hammer the device or stall ring
-    # detection — the options-flow selector enforces the same range.
-    raw_scan_interval = _get_option(entry, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    try:
-        scan_interval = int(str(raw_scan_interval))
-    except (TypeError, ValueError):
-        scan_interval = DEFAULT_SCAN_INTERVAL
-    scan_interval = max(SCAN_INTERVAL_MIN, min(scan_interval, SCAN_INTERVAL_MAX))
-
     coordinator = TwoNIntercomCoordinator(
         hass,
         api,
-        scan_interval=scan_interval,
         called_id=str(_get_option(entry, CONF_CALLED_ID) or "") or None,
         config_entry=entry,
         ring_on_keypress=bool(
             _get_option(entry, CONF_RING_ON_KEYPRESS, DEFAULT_RING_ON_KEYPRESS)
+        ),
+        ring_on_call=bool(
+            _get_option(entry, CONF_RING_ON_CALL, DEFAULT_RING_ON_CALL)
         ),
     )
 

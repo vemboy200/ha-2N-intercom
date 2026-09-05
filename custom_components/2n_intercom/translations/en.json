@@ -20,17 +20,28 @@
         "description": "Configure device features. Relays can be configured later in the integration options.",
         "data": {
           "name": "Name",
-          "enable_camera": "Enable Camera",
-          "enable_doorbell": "Enable Doorbell",
-          "ring_on_keypress": "Ring on button press",
-          "called_id": "Ringing account (peer)"
+          "enable_camera": "Enable Camera"
         },
         "data_description": {
           "name": "Displayed name in Home Assistant",
-          "enable_camera": "Create the camera entity for snapshots and streaming",
-          "enable_doorbell": "Create the doorbell entity for ring detection",
-          "ring_on_keypress": "Treat a physical button press (KeyPressed event) as a doorbell ring, even when the press does not start a SIP call — required for devices with an empty directory. Note: the ringing-account filter does not apply to button presses.",
-          "called_id": "Select which account should ring. Choose All calls to ring on every button."
+          "enable_camera": "Create the camera entity for snapshots and streaming"
+        },
+        "sections": {
+          "doorbell": {
+            "name": "Doorbell",
+            "data": {
+              "enable_doorbell": "Enable Doorbell",
+              "ring_on_keypress": "Ring on button press",
+              "ring_on_call": "Ring on incoming call",
+              "called_id": "Ringing account (peer)"
+            },
+            "data_description": {
+              "enable_doorbell": "Create the doorbell entity for ring detection",
+              "ring_on_keypress": "Treat a physical button press (KeyPressed event) as a doorbell ring, even when the press does not start a SIP call — required for devices with an empty directory. Note: the ringing-account filter does not apply to button presses.",
+              "ring_on_call": "Treat an incoming SIP call (CallStateChanged event) as a doorbell ring. Disable this if something other than a physical button press can place a call to this device (e.g. an intercom/page-through call from a home automation system) and you rely on the separate Call state sensor for that instead.",
+              "called_id": "Select which account should ring. Choose All calls to ring on every button."
+            }
+          }
         }
       }
     },
@@ -41,35 +52,35 @@
       "already_configured": "This 2N Intercom device is already configured.",
       "reauth_successful": "Authentication updated successfully.",
       "reconfigure_successful": "Device configuration updated successfully."
+    },
+    "progress": {
+      "reauth": "Re-authenticating with the 2N Intercom",
+      "reconfigure": "Updating the 2N Intercom connection"
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "2N Intercom Options",
-        "data": {
-          "enable_camera": "Enable Camera",
-          "enable_doorbell": "Enable Doorbell",
-          "ring_on_keypress": "Ring on button press"
+        "menu_options": {
+          "doorbell": "Doorbell",
+          "camera": "Camera",
+          "relays": "Relays"
         }
       },
-      "device": {
-        "title": "2N Intercom Options - Device",
-        "description": "Update device features. Relays are auto-detected from the device — override names and types in the next step.",
+      "doorbell": {
+        "title": "2N Intercom Options - Doorbell",
+        "description": "Configure how the doorbell entity detects a ring.",
         "data": {
-          "name": "Name",
-          "enable_camera": "Enable Camera",
           "enable_doorbell": "Enable Doorbell",
           "ring_on_keypress": "Ring on button press",
-          "scan_interval": "Backup polling interval (seconds)",
+          "ring_on_call": "Ring on incoming call",
           "called_id": "Ringing account (peer)"
         },
         "data_description": {
-          "name": "Displayed name in Home Assistant",
-          "enable_camera": "Create the camera entity",
           "enable_doorbell": "Create the doorbell entity",
           "ring_on_keypress": "Treat a physical button press (KeyPressed event) as a doorbell ring, even when the press does not start a SIP call — required for devices with an empty directory. Note: the ringing-account filter does not apply to button presses.",
-          "scan_interval": "Backup polling interval (2-600 s). Events deliver real-time updates; polling only runs as a safety net. Default 60 s is fine for most setups.",
+          "ring_on_call": "Treat an incoming SIP call (CallStateChanged event) as a doorbell ring. Disable this if something other than a physical button press can place a call to this device (e.g. an intercom/page-through call from a home automation system) and you rely on the separate Call state sensor for that instead.",
           "called_id": "Select which account should ring. Choose All calls to ring on every button."
         }
       },
@@ -77,6 +88,7 @@
         "title": "2N Intercom Options - Camera",
         "description": "Tune how Home Assistant streams video from the 2N camera. Lower MJPEG resolution and frame rate dramatically reduce bandwidth on continuously visible dashboards.",
         "data": {
+          "enable_camera": "Enable Camera",
           "live_view_mode": "Live view mode",
           "camera_source": "Camera source",
           "mjpeg_width": "MJPEG width (pixels)",
@@ -86,6 +98,7 @@
           "rtsp_password": "RTSP password"
         },
         "data_description": {
+          "enable_camera": "Create the camera entity",
           "live_view_mode": "auto picks RTSP when RTSP credentials are configured and valid, then MJPEG, then JPEG snapshots only",
           "camera_source": "Which sensor on the device to stream — internal is the built-in lens; external is a secondary camera module if fitted",
           "mjpeg_width": "Width of the MJPEG stream requested from the device (e.g. 640)",
@@ -95,20 +108,62 @@
           "rtsp_password": "Password for the RTSP streaming service account"
         }
       },
-      "relay": {
-        "title": "2N Intercom Options - Relay {relay_number}",
-        "description": "Override settings for auto-detected relay {relay_number}. Door strikes typically need ~2000 ms pulse, swing-gate triggers ~15000 ms.",
-        "data": {
-          "relay_number": "Relay Number",
-          "relay_name": "Relay Name",
-          "relay_device_type": "Device Type",
-          "relay_pulse_duration": "Pulse Duration (milliseconds)"
-        },
-        "data_description": {
-          "relay_number": "Physical relay number on the device (auto-detected)",
-          "relay_name": "Displayed name for this relay in Home Assistant",
-          "relay_device_type": "Door creates a switch entity, gate creates a cover entity",
-          "relay_pulse_duration": "Trigger pulse length sent to the relay (ms). Default is the device-configured switchOnDuration."
+      "relays": {
+        "title": "2N Intercom Options - Relays",
+        "description": "Override auto-detected relay settings, one collapsible section per relay. Door strikes typically need ~2000 ms pulse, swing-gate triggers ~15000 ms.",
+        "sections": {
+          "relay_1": {
+            "name": "Relay 1",
+            "data": {
+              "relay_name": "Relay Name",
+              "relay_device_type": "Device Type",
+              "relay_pulse_duration": "Pulse Duration (milliseconds)"
+            },
+            "data_description": {
+              "relay_name": "Displayed name for this relay in Home Assistant",
+              "relay_device_type": "Door creates a switch entity, gate creates a cover entity",
+              "relay_pulse_duration": "Trigger pulse length sent to the relay (ms). Default is the device-configured switchOnDuration."
+            }
+          },
+          "relay_2": {
+            "name": "Relay 2",
+            "data": {
+              "relay_name": "Relay Name",
+              "relay_device_type": "Device Type",
+              "relay_pulse_duration": "Pulse Duration (milliseconds)"
+            },
+            "data_description": {
+              "relay_name": "Displayed name for this relay in Home Assistant",
+              "relay_device_type": "Door creates a switch entity, gate creates a cover entity",
+              "relay_pulse_duration": "Trigger pulse length sent to the relay (ms). Default is the device-configured switchOnDuration."
+            }
+          },
+          "relay_3": {
+            "name": "Relay 3",
+            "data": {
+              "relay_name": "Relay Name",
+              "relay_device_type": "Device Type",
+              "relay_pulse_duration": "Pulse Duration (milliseconds)"
+            },
+            "data_description": {
+              "relay_name": "Displayed name for this relay in Home Assistant",
+              "relay_device_type": "Door creates a switch entity, gate creates a cover entity",
+              "relay_pulse_duration": "Trigger pulse length sent to the relay (ms). Default is the device-configured switchOnDuration."
+            }
+          },
+          "relay_4": {
+            "name": "Relay 4",
+            "data": {
+              "relay_name": "Relay Name",
+              "relay_device_type": "Device Type",
+              "relay_pulse_duration": "Pulse Duration (milliseconds)"
+            },
+            "data_description": {
+              "relay_name": "Displayed name for this relay in Home Assistant",
+              "relay_device_type": "Door creates a switch entity, gate creates a cover entity",
+              "relay_pulse_duration": "Trigger pulse length sent to the relay (ms). Default is the device-configured switchOnDuration."
+            }
+          }
         }
       }
     }

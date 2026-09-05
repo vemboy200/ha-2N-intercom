@@ -13,6 +13,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.config_entries import ConfigFlowResult
+from homeassistant.data_entry_flow import SectionConfig, section
 from homeassistant.helpers import selector
 from homeassistant.helpers.selector import SelectOptionDict
 import homeassistant.helpers.config_validation as cv
@@ -37,10 +38,10 @@ from .const import (
     CONF_RELAY_NUMBER,
     CONF_RELAY_PULSE_DURATION,
     CONF_RELAYS,
+    CONF_RING_ON_CALL,
     CONF_RING_ON_KEYPRESS,
     CONF_RTSP_PASSWORD,
     CONF_RTSP_USERNAME,
-    CONF_SCAN_INTERVAL,
     CONF_SERIAL_NUMBER,
     CONF_VERIFY_SSL,
     DEFAULT_CAMERA_MJPEG_FPS,
@@ -54,8 +55,8 @@ from .const import (
     DEFAULT_PORT_HTTPS,
     DEFAULT_PROTOCOL,
     DEFAULT_PULSE_DURATION,
+    DEFAULT_RING_ON_CALL,
     DEFAULT_RING_ON_KEYPRESS,
-    DEFAULT_SCAN_INTERVAL,
     DEFAULT_VERIFY_SSL,
     DEVICE_TYPE_DOOR,
     DEVICE_TYPE_GATE,
@@ -64,12 +65,17 @@ from .const import (
     PROTOCOL_HTTP,
     PROTOCOL_HTTPS,
     PROTOCOLS,
-    SCAN_INTERVAL_MAX,
-    SCAN_INTERVAL_MIN,
 )
 from .coordinator import TwoNIntercomRuntimeData
 
 _LOGGER = logging.getLogger(__name__)
+
+SECTION_DOORBELL = "doorbell"
+
+
+def _relay_section_key(relay_number: int) -> str:
+    """Return the schema/section key for one relay's override group."""
+    return f"relay_{relay_number}"
 
 
 def _all_calls_label(language: str) -> str:
@@ -299,7 +305,9 @@ class TwoNIntercomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type:
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            doorbell_options = user_input.pop(SECTION_DOORBELL, {})
             self._data.update(user_input)
+            self._data.update(doorbell_options)
             return await self._async_create_entry()
 
         await self._ensure_integration_info()
@@ -331,15 +339,26 @@ class TwoNIntercomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type:
                 vol.Required(
                     CONF_ENABLE_CAMERA, default=DEFAULT_ENABLE_CAMERA
                 ): cv.boolean,
-                vol.Required(
-                    CONF_ENABLE_DOORBELL, default=DEFAULT_ENABLE_DOORBELL
-                ): cv.boolean,
-                vol.Required(
-                    CONF_RING_ON_KEYPRESS, default=DEFAULT_RING_ON_KEYPRESS
-                ): cv.boolean,
-                vol.Optional(
-                    CONF_CALLED_ID, default=default_called
-                ): called_field,
+                vol.Required(SECTION_DOORBELL): section(
+                    vol.Schema(
+                        {
+                            vol.Required(
+                                CONF_ENABLE_DOORBELL, default=DEFAULT_ENABLE_DOORBELL
+                            ): cv.boolean,
+                            vol.Required(
+                                CONF_RING_ON_KEYPRESS,
+                                default=DEFAULT_RING_ON_KEYPRESS,
+                            ): cv.boolean,
+                            vol.Required(
+                                CONF_RING_ON_CALL, default=DEFAULT_RING_ON_CALL
+                            ): cv.boolean,
+                            vol.Optional(
+                                CONF_CALLED_ID, default=default_called
+                            ): called_field,
+                        }
+                    ),
+                    SectionConfig(collapsed=False),
+                ),
             }
         )
 
@@ -564,9 +583,9 @@ class TwoNIntercomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type:
 class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
     """Handle options flow for 2N Intercom.
 
-    The options flow manages **behavioral** preferences only: polling
-    interval, feature toggles, relay configuration, camera transport
-    settings.  Connection identity (host, port, credentials, SSL) lives
+    The options flow manages **behavioral** preferences only: feature
+    toggles, relay configuration, camera transport settings.  Connection
+    identity (host, port, credentials, SSL) lives
     exclusively in ``entry.data`` and is changed through the reconfigure
     or reauth flows — never through options.  This prevents the
     options-flow output from shadowing a successful reauth/reconfigure.
@@ -594,16 +613,45 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
             return self.config_entry.options[key]
         return self.config_entry.data.get(key, default)
 
+    async def _async_detect_relays(self) -> list[dict[str, Any]]:
+        """Return enabled relays reported by the running coordinator, if any."""
+        runtime: TwoNIntercomRuntimeData | None = getattr(
+            self.config_entry, "runtime_data", None
+        )
+        if runtime is None:
+            return []
+        caps = runtime.coordinator.switch_caps
+        switches = caps.get("switches") or []
+        return [
+            s
+            for s in switches
+            if isinstance(s, dict)
+            and s.get("enabled")
+            and isinstance(s.get("switch"), int)
+        ]
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Start options flow directly at device preferences."""
-        return await self.async_step_device(user_input)
+        """Show a menu of independent setting categories to edit.
 
-    async def async_step_device(
+        Each option below is a self-contained step that saves and closes
+        on its own. Renaming the device is handled by Home Assistant's
+        own device dialog, not here — there's no separate "Device"
+        category. "Relays" is the only category gated on current state
+        (there's nothing to configure without a detected relay); Camera
+        always appears since it's also where the camera gets turned on.
+        """
+        menu_options = ["doorbell", "camera"]
+        self._detected_relays = await self._async_detect_relays()
+        if self._detected_relays:
+            menu_options.append("relays")
+        return self.async_show_menu(step_id="init", menu_options=menu_options)
+
+    async def async_step_doorbell(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle device configuration step in options."""
+        """Handle doorbell ring-detection preferences."""
         errors: dict[str, str] = {}
 
         # Connection data for the API call to fetch peers lives in entry.data.
@@ -626,42 +674,11 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
         )
 
         if user_input is not None:
-            # NumberSelector returns floats; coerce so the int round-trips
-            # cleanly into entry.options and the coordinator's int comparison
-            # holds.
-            if CONF_SCAN_INTERVAL in user_input and user_input[CONF_SCAN_INTERVAL] is not None:
-                user_input[CONF_SCAN_INTERVAL] = int(user_input[CONF_SCAN_INTERVAL])
             self._data.update(user_input)
-
-            # If the camera is enabled, surface the camera transport options
-            # step so the user can tune live-view mode and MJPEG resolution.
-            # Disabling the camera skips it entirely — the defaults stay as a
-            # no-op until the user re-enables.
-            if user_input.get(CONF_ENABLE_CAMERA, DEFAULT_ENABLE_CAMERA):
-                return await self.async_step_camera()
-
-            return await self._async_after_camera_step()
-
-        scan_interval_field = selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=SCAN_INTERVAL_MIN,
-                max=SCAN_INTERVAL_MAX,
-                step=1,
-                mode=selector.NumberSelectorMode.BOX,
-                unit_of_measurement="s",
-            )
-        )
+            return await self._async_create_entry()
 
         data_schema = vol.Schema(
             {
-                vol.Required(
-                    "name",
-                    default=self._current_option("name", "2N Intercom"),
-                ): cv.string,
-                vol.Required(
-                    CONF_ENABLE_CAMERA,
-                    default=self._current_option(CONF_ENABLE_CAMERA, DEFAULT_ENABLE_CAMERA),
-                ): cv.boolean,
                 vol.Required(
                     CONF_ENABLE_DOORBELL,
                     default=self._current_option(
@@ -675,11 +692,11 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
                     ),
                 ): cv.boolean,
                 vol.Required(
-                    CONF_SCAN_INTERVAL,
+                    CONF_RING_ON_CALL,
                     default=self._current_option(
-                        CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+                        CONF_RING_ON_CALL, DEFAULT_RING_ON_CALL
                     ),
-                ): scan_interval_field,
+                ): cv.boolean,
                 vol.Optional(
                     CONF_CALLED_ID,
                     default=default_called,
@@ -688,7 +705,7 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
         )
 
         return self.async_show_form(
-            step_id="device",
+            step_id="doorbell",
             data_schema=data_schema,
             errors=errors,
         )
@@ -696,14 +713,15 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
     async def async_step_camera(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle camera transport options.
+        """Handle the camera toggle and its transport options.
 
-        Lets the user override how the integration talks to the 2N camera —
-        live-view mode (auto/rtsp/mjpeg/jpeg-only) and MJPEG stream
-        resolution/fps. The defaults match the device's high-res preset, so
-        leaving every field untouched preserves the previous behavior. The
-        coordinator picks the new values up via ``async_update_options`` →
-        ``async_reload``, no manual restart required.
+        Lets the user turn the camera entity on/off and, when on, override
+        how the integration talks to the 2N camera — live-view mode
+        (auto/rtsp/mjpeg/jpeg-only) and MJPEG stream resolution/fps. The
+        defaults match the device's high-res preset, so leaving every field
+        untouched preserves the previous behavior. The coordinator picks
+        the new values up via ``async_update_options`` → ``async_reload``,
+        no manual restart required.
         """
         errors: dict[str, str] = {}
 
@@ -715,7 +733,7 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
                 if int_key in user_input and user_input[int_key] is not None:
                     user_input[int_key] = int(user_input[int_key])
             self._data.update(user_input)
-            return await self._async_after_camera_step()
+            return await self._async_create_entry()
 
         live_view_field = selector.SelectSelector(
             selector.SelectSelectorConfig(
@@ -767,6 +785,12 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
 
         data_schema = vol.Schema(
             {
+                vol.Required(
+                    CONF_ENABLE_CAMERA,
+                    default=self._current_option(
+                        CONF_ENABLE_CAMERA, DEFAULT_ENABLE_CAMERA
+                    ),
+                ): cv.boolean,
                 vol.Required(
                     CONF_LIVE_VIEW_MODE,
                     default=self._current_option(
@@ -829,101 +853,84 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
                 return relay
         return {}
 
-    async def _async_after_camera_step(self) -> ConfigFlowResult:
-        """Continue after the (optional) camera step.
-
-        Discovers relays from the running coordinator's switch_caps and
-        offers per-relay overrides (name, device type, pulse duration).
-        If no relays are detected or the entry isn't loaded, relay
-        configuration is skipped.
-        """
-        runtime: TwoNIntercomRuntimeData | None = getattr(
-            self.config_entry, "runtime_data", None
-        )
-        if runtime is not None:
-            caps = runtime.coordinator.switch_caps
-            switches = caps.get("switches") or []
-            self._detected_relays = [
-                s
-                for s in switches
-                if isinstance(s, dict)
-                and s.get("enabled")
-                and isinstance(s.get("switch"), int)
-            ]
-        else:
-            self._detected_relays = []
-
-        if not self._detected_relays:
-            self._data[CONF_RELAYS] = []
-            return await self._async_create_entry()
-
-        self._relays = []
-        return await self.async_step_relay(relay_index=0)
-
-    async def async_step_relay(
-        self, user_input: dict[str, Any] | None = None, relay_index: int = 0
+    async def async_step_relays(
+        self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Collect overrides for one auto-detected relay.
+        """Collect overrides for every auto-detected relay on one page.
 
-        Shows name, device type (door/gate), and pulse duration in a
-        single step.  The relay number is fixed — it comes from the
-        device's ``/api/switch/caps`` response.
+        Each relay gets its own collapsible section (name, device type,
+        pulse duration) instead of a separate wizard page per relay. The
+        relay number is fixed — it comes from the device's
+        ``/api/switch/caps`` response — so it's only used to key each
+        section and tag the saved override, not shown as an editable field.
         """
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            self._relays.append(user_input)
-            if len(self._relays) < len(self._detected_relays):
-                return await self.async_step_relay(
-                    relay_index=len(self._relays)
-                )
+            self._relays = [
+                {
+                    CONF_RELAY_NUMBER: cap["switch"],
+                    **user_input.get(_relay_section_key(cap["switch"]), {}),
+                }
+                for cap in self._detected_relays
+            ]
             self._data[CONF_RELAYS] = self._relays
             return await self._async_create_entry()
 
-        cap = self._detected_relays[relay_index]
-        relay_number = cap["switch"]
-        existing = self._get_existing_relay_override(relay_number)
+        schema_dict: dict[Any, Any] = {}
+        for cap in self._detected_relays:
+            relay_number = cap["switch"]
+            existing = self._get_existing_relay_override(relay_number)
 
-        # Default pulse from device's switchOnDuration (seconds → ms).
-        device_duration_s = cap.get("switchOnDuration")
-        if isinstance(device_duration_s, (int, float)) and device_duration_s > 0:
-            default_pulse = int(device_duration_s * 1000)
-        else:
-            default_pulse = DEFAULT_PULSE_DURATION
+            # Default pulse from device's switchOnDuration (seconds → ms).
+            device_duration_s = cap.get("switchOnDuration")
+            if isinstance(device_duration_s, (int, float)) and device_duration_s > 0:
+                default_pulse = int(device_duration_s * 1000)
+            else:
+                default_pulse = DEFAULT_PULSE_DURATION
 
-        data_schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_RELAY_NUMBER, default=relay_number
-                ): vol.In([relay_number]),
-                vol.Required(
-                    CONF_RELAY_NAME,
-                    default=existing.get(
-                        CONF_RELAY_NAME, f"Relay {relay_number}"
-                    ),
-                ): cv.string,
-                vol.Required(
-                    CONF_RELAY_DEVICE_TYPE,
-                    default=existing.get(
-                        CONF_RELAY_DEVICE_TYPE, DEVICE_TYPE_DOOR
-                    ),
-                ): vol.In([DEVICE_TYPE_DOOR, DEVICE_TYPE_GATE]),
-                vol.Required(
-                    CONF_RELAY_PULSE_DURATION,
-                    default=existing.get(
-                        CONF_RELAY_PULSE_DURATION, default_pulse
-                    ),
-                ): cv.positive_int,
-            }
-        )
+            schema_dict[vol.Required(_relay_section_key(relay_number))] = section(
+                vol.Schema(
+                    {
+                        vol.Required(
+                            CONF_RELAY_NAME,
+                            default=existing.get(
+                                CONF_RELAY_NAME, f"Relay {relay_number}"
+                            ),
+                        ): cv.string,
+                        vol.Required(
+                            CONF_RELAY_DEVICE_TYPE,
+                            default=existing.get(
+                                CONF_RELAY_DEVICE_TYPE, DEVICE_TYPE_DOOR
+                            ),
+                        ): vol.In([DEVICE_TYPE_DOOR, DEVICE_TYPE_GATE]),
+                        vol.Required(
+                            CONF_RELAY_PULSE_DURATION,
+                            default=existing.get(
+                                CONF_RELAY_PULSE_DURATION, default_pulse
+                            ),
+                        ): cv.positive_int,
+                    }
+                ),
+                SectionConfig(collapsed=False),
+            )
 
         return self.async_show_form(
-            step_id="relay",
-            data_schema=data_schema,
+            step_id="relays",
+            data_schema=vol.Schema(schema_dict),
             errors=errors,
-            description_placeholders={"relay_number": str(relay_number)},
         )
 
     async def _async_create_entry(self) -> ConfigFlowResult:
-        """Create the options entry."""
-        return self.async_create_entry(title="", data=self._data)
+        """Save this step's changes onto the existing options.
+
+        Each menu category (device / doorbell / camera / relays) submits
+        independently — ``self._data`` holds only the fields the user just
+        edited, not every option. Merge onto the current
+        ``entry.options`` rather than replacing it outright, or picking
+        just one category would silently wipe out every other saved
+        setting.
+        """
+        merged = dict(self.config_entry.options)
+        merged.update(self._data)
+        return self.async_create_entry(title="", data=merged)

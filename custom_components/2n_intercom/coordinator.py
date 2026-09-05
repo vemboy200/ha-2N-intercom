@@ -30,6 +30,7 @@ from .const import (
     CONF_MJPEG_HEIGHT,
     CONF_MJPEG_WIDTH,
     DEFAULT_LIVE_VIEW_MODE,
+    DEFAULT_RING_ON_CALL,
     DEFAULT_RING_ON_KEYPRESS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -121,6 +122,7 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
         called_id: str | None = None,
         config_entry: ConfigEntry | None = None,
         ring_on_keypress: bool = DEFAULT_RING_ON_KEYPRESS,
+        ring_on_call: bool = DEFAULT_RING_ON_CALL,
     ) -> None:
         """Initialize the coordinator."""
         # HA 2024.10+ accepts config_entry kwarg; pass when available so log
@@ -169,6 +171,7 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
         self._motion_detected = False
         self._last_motion_time: datetime | None = None
         self._ring_on_keypress = bool(ring_on_keypress)
+        self._ring_on_call = bool(ring_on_call)
         self._last_key_pressed: str | None = None
         self._ring_pulse_clear_handle: asyncio.TimerHandle | None = None
 
@@ -453,6 +456,8 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
         if not isinstance(event, dict):
             return False
 
+        _LOGGER.debug("Received log event: %s", event)
+
         event_name = str(event.get("event") or "").strip()
 
         if event_name == "MotionDetected":
@@ -527,21 +532,22 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
         ):
             self._active_session_id = None
 
-        ring_allowed = (
-            self._ring_filter_peer is None
-            or self._last_called_peer == self._ring_filter_peer
-        )
-        is_ringing = state in self._RING_STATES and direction != "outgoing"
-        if is_ringing and ring_allowed:
-            self._ring_detected = True
-            self._last_ring_time = datetime.now()
-            self._ring_pulse_until = (
-                self._last_ring_time
-                + timedelta(seconds=DOORBELL_PULSE_DURATION)
+        if self._ring_on_call:
+            ring_allowed = (
+                self._ring_filter_peer is None
+                or self._last_called_peer == self._ring_filter_peer
             )
-        elif state not in self._RING_STATES:
-            self._ring_detected = False
-            self._ring_pulse_until = None
+            is_ringing = state in self._RING_STATES and direction != "outgoing"
+            if is_ringing and ring_allowed:
+                self._ring_detected = True
+                self._last_ring_time = datetime.now()
+                self._ring_pulse_until = (
+                    self._last_ring_time
+                    + timedelta(seconds=DOORBELL_PULSE_DURATION)
+                )
+            elif state not in self._RING_STATES:
+                self._ring_detected = False
+                self._ring_pulse_until = None
 
         self._last_call_state_value = state
 

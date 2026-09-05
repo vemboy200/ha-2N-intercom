@@ -774,10 +774,10 @@ class IntegrationSetupTests(unittest.IsolatedAsyncioTestCase):
 
         entry = FakeConfigEntry(
             "entry-1",
-            {"scan_interval": 5, "host": "192.0.2.20"},
-            options={"scan_interval": 10},
+            {"enable_camera": False, "host": "192.0.2.20"},
+            options={"enable_camera": True},
         )
-        self.assertEqual(init_module._get_option(entry, "scan_interval"), 10)
+        self.assertEqual(init_module._get_option(entry, "enable_camera"), True)
         self.assertEqual(init_module._get_option(entry, "host"), "192.0.2.20")
         self.assertIsNone(init_module._get_option(entry, "missing"))
         self.assertEqual(init_module._get_option(entry, "missing", "default"), "default")
@@ -1103,26 +1103,6 @@ class IntegrationSetupTests(unittest.IsolatedAsyncioTestCase):
         await hangup_call(types.SimpleNamespace(data={}))
         # No calls were made
         self.assertEqual(entry.runtime_data.api.hangup_calls, [])
-
-    async def test_scan_interval_bad_value_uses_default(self) -> None:
-        """Non-integer scan_interval should fall back to DEFAULT_SCAN_INTERVAL."""
-        init_module = self.init_module
-        ha_const = sys.modules["homeassistant.const"]
-        init_module.TwoNIntercomAPI = FakeAPI
-
-        entry = FakeConfigEntry(
-            "entry-1",
-            {
-                ha_const.CONF_HOST: "intercom.local",
-                ha_const.CONF_PORT: 443,
-                ha_const.CONF_USERNAME: "user",
-                ha_const.CONF_PASSWORD: "secret",
-            },
-            options={"scan_interval": "not_a_number"},
-        )
-        hass = FakeHass([entry])
-        result = await init_module.async_setup_entry(hass, entry)
-        self.assertTrue(result)
 
     async def test_async_update_options_reloads_entry(self) -> None:
         """async_update_options should trigger a reload."""
