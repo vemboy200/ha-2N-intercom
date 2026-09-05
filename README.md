@@ -14,6 +14,8 @@ Home Assistant custom integration for 2N IP Intercom systems with camera, doorbe
 | **2N IP Force** | 2.50.x | **Expected to work** | Same HTTP API family |
 | **2N IP Safety** | 2.50.x | **Untested** | Same API but may lack camera |
 | **2N IP Audio** | 2.50.x | **Untested** | No camera module |
+| **Control4 DS2 Door Station** | 2.50.x | **Verified** | Rebranded **2N IP Verso** — same HTTP API, works with this integration. See [Control4 DS2 / DS2 Mini](#control4-ds2--ds2-mini-door-stations) below for the credential-retrieval steps and known caveats |
+| **Control4 DS2 Mini Door Station** | 2.50.x | **Verified** | Rebranded **2N IP Solo** — same HTTP API, works with this integration |
 | Older 2N devices | < 2.40 | **Not supported** | Different API surface |
 | Non-2N intercoms | — | **Not supported** | 2N HTTP API only |
 
@@ -90,6 +92,20 @@ The integration provides optional **RTSP Username** and **RTSP Password** fields
 - The RTSP probe performs a full Digest authentication handshake (unauthenticated OPTIONS → 401 challenge → authenticated OPTIONS) to validate that the credentials actually work before marking RTSP as available.
 - RTSP URLs embed the credentials for the HA stream worker (`rtsp://user:pass@host:554/h264_stream`). Special characters in credentials are URL-encoded.
 - Without RTSP credentials, the integration will not attempt RTSP even if the device has a valid RTSP license — it falls back to MJPEG.
+
+#### Control4 DS2 / DS2 Mini Door Stations
+
+The Control4 **DS2 Door Station** and **DS2 Mini Door Station** are rebranded 2N hardware (DS2 = IP Verso, DS2 Mini = IP Solo) and work with this integration using the same `/api/` HTTP API — but on these units, the HTTP API credentials aren't set up through 2N's own web admin the way they are on a plain 2N device. Retrieve them instead through Control4's own tooling:
+
+1. Open **Composer Pro** and connect to the project.
+2. Select the door station's driver (usually named after the intercom, e.g. "Front Door" or "DS2 Door Station").
+3. Go to its **Properties** tab and expand the **Advanced** section.
+4. The device's HTTP API username and password are listed there — use them as-is in this integration's setup flow, along with the door station's IP address.
+
+**Known caveats specific to Control4-integrated units** (see [Known Limitations](#known-limitations)):
+
+- The physical call button and/or relay outputs may be wired directly into Control4's own hardware (e.g. a separate relay/contact expander module) rather than being driven purely through the 2N board's own software. On such installs, actions that appear to succeed at the API level (a relay command returns success, the device plays its acknowledgment tone) may not produce the expected physical result, because the actual mechanism lives on the Control4 side of the wiring, not in 2N's firmware. Verify with the 2N device's own local syslog (**Diagnostics → Syslog** in its web UI) and a packet capture if a relay or button press doesn't behave as expected — if neither shows any activity for the action in question, it's happening entirely outside the 2N board and isn't something this integration (or the device's own HTTP API) can observe or control.
+- The doorbell binary sensor can also turn on when Control4 itself places a call *into* the door station (for example, a page-through/announcement), not only when a visitor presses the physical button — from the device's own perspective, both look like an incoming call.
 
 ## Architecture
 
@@ -306,6 +322,7 @@ The integration uses two data channels:
 - **No gate position feedback** — the IP Verso has no gate-position sensor; cover entities use optimistic state transitions
 - **Single camera source** — only one camera source (internal or external) can be active per config entry
 - **Firmware < 2.40 unsupported** — older firmware versions use a different API surface
+- **Control4-integrated units may bypass the 2N software stack for physical I/O** — see [Control4 DS2 / DS2 Mini Door Stations](#control4-ds2--ds2-mini-door-stations)
 
 ## Troubleshooting
 
@@ -329,6 +346,7 @@ The integration uses two data channels:
 - Open the integration's diagnostics; the log subscription id should be set
 - Press the button and watch HA logs — the event path should flip the binary sensor within ~1 s
 - If the subscription is down, the listener retries with exponential backoff (up to ~60 s). Ring events during a subscription gap are lost
+- **On Control4 DS2/DS2 Mini units**: if the button press produces nothing at all — no HA event, and nothing in the device's own local syslog either — the button is likely wired directly into Control4's own hardware rather than through the 2N board. See [Control4 DS2 / DS2 Mini Door Stations](#control4-ds2--ds2-mini-door-stations)
 
 ### Reauth notification keeps appearing
 - Credentials really are wrong, or the device locked the account. Check the 2N web UI under **Services → HTTP API → Account** and re-enter the password through the reauth flow
