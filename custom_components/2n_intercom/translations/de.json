@@ -44,6 +44,38 @@
             }
           }
         }
+      },
+      "reauth_confirm": {
+        "title": "2N Gegensprechanlage erneut authentifizieren",
+        "description": "Die Zugangsdaten für {host} wurden abgelehnt. Geben Sie den aktuellen Benutzernamen und das Passwort ein.",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "username": "Anmeldename des Geräts für den API-Zugang",
+          "password": "Anmeldepasswort des Geräts"
+        }
+      },
+      "reconfigure": {
+        "title": "2N Gegensprechanlage - Neukonfiguration",
+        "description": "Aktualisieren Sie die Verbindungseinstellungen für diese 2N Gegensprechanlage.",
+        "data": {
+          "host": "IP-Adresse",
+          "port": "Port",
+          "protocol": "Protokoll",
+          "username": "Benutzername",
+          "password": "Passwort",
+          "verify_ssl": "SSL-Zertifikat prüfen"
+        },
+        "data_description": {
+          "host": "IP-Adresse oder Hostname des Geräts (z. B. 192.0.2.100)",
+          "port": "HTTP(S)-API-Port des Geräts",
+          "protocol": "Verbindungsprotokoll zur Kommunikation mit dem Gerät",
+          "username": "Anmeldename des Geräts für den API-Zugang",
+          "password": "Anmeldepasswort des Geräts",
+          "verify_ssl": "SSL-Zertifikat des Geräts bei Verwendung von HTTPS überprüfen"
+        }
       }
     },
     "error": {
@@ -114,12 +146,10 @@
           "relay_1": {
             "name": "Relais 1",
             "data": {
-              "relay_name": "Relaisname",
               "relay_device_type": "Gerätetyp",
               "relay_pulse_duration": "Pulsdauer (Millisekunden)"
             },
             "data_description": {
-              "relay_name": "Anzeigename für dieses Relais in Home Assistant",
               "relay_device_type": "Tür erzeugt einen Schalter, Tor erzeugt eine Abdeckung",
               "relay_pulse_duration": "Länge des Schaltpulses an das Relais (ms). Standard ist die am Gerät konfigurierte switchOnDuration."
             }
@@ -127,12 +157,10 @@
           "relay_2": {
             "name": "Relais 2",
             "data": {
-              "relay_name": "Relaisname",
               "relay_device_type": "Gerätetyp",
               "relay_pulse_duration": "Pulsdauer (Millisekunden)"
             },
             "data_description": {
-              "relay_name": "Anzeigename für dieses Relais in Home Assistant",
               "relay_device_type": "Tür erzeugt einen Schalter, Tor erzeugt eine Abdeckung",
               "relay_pulse_duration": "Länge des Schaltpulses an das Relais (ms). Standard ist die am Gerät konfigurierte switchOnDuration."
             }
@@ -140,12 +168,10 @@
           "relay_3": {
             "name": "Relais 3",
             "data": {
-              "relay_name": "Relaisname",
               "relay_device_type": "Gerätetyp",
               "relay_pulse_duration": "Pulsdauer (Millisekunden)"
             },
             "data_description": {
-              "relay_name": "Anzeigename für dieses Relais in Home Assistant",
               "relay_device_type": "Tür erzeugt einen Schalter, Tor erzeugt eine Abdeckung",
               "relay_pulse_duration": "Länge des Schaltpulses an das Relais (ms). Standard ist die am Gerät konfigurierte switchOnDuration."
             }
@@ -153,12 +179,10 @@
           "relay_4": {
             "name": "Relais 4",
             "data": {
-              "relay_name": "Relaisname",
               "relay_device_type": "Gerätetyp",
               "relay_pulse_duration": "Pulsdauer (Millisekunden)"
             },
             "data_description": {
-              "relay_name": "Anzeigename für dieses Relais in Home Assistant",
               "relay_device_type": "Tür erzeugt einen Schalter, Tor erzeugt eine Abdeckung",
               "relay_pulse_duration": "Länge des Schaltpulses an das Relais (ms). Standard ist die am Gerät konfigurierte switchOnDuration."
             }

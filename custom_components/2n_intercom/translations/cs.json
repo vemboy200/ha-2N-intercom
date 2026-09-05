@@ -44,6 +44,38 @@
             }
           }
         }
+      },
+      "reauth_confirm": {
+        "title": "Znovu ověřit 2N Intercom",
+        "description": "Přihlašovací údaje pro {host} byly odmítnuty. Zadejte aktuální uživatelské jméno a heslo.",
+        "data": {
+          "username": "Uživatelské jméno",
+          "password": "Heslo"
+        },
+        "data_description": {
+          "username": "Přihlašovací jméno zařízení pro API",
+          "password": "Přihlašovací heslo zařízení"
+        }
+      },
+      "reconfigure": {
+        "title": "Nastavení 2N Intercom - Rekonfigurace",
+        "description": "Aktualizujte nastavení připojení pro toto zařízení 2N Intercom.",
+        "data": {
+          "host": "IP adresa",
+          "port": "Port",
+          "protocol": "Protokol",
+          "username": "Uživatelské jméno",
+          "password": "Heslo",
+          "verify_ssl": "Ověřovat SSL certifikát"
+        },
+        "data_description": {
+          "host": "IP adresa nebo hostname zařízení (např. 192.0.2.100)",
+          "port": "Port HTTP(S) API na zařízení",
+          "protocol": "Protokol připojení použitý ke komunikaci se zařízením",
+          "username": "Přihlašovací jméno zařízení pro API",
+          "password": "Přihlašovací heslo zařízení",
+          "verify_ssl": "Ověřovat SSL certifikát zařízení při použití HTTPS"
+        }
       }
     },
     "error": {
@@ -114,12 +146,10 @@
           "relay_1": {
             "name": "Relé 1",
             "data": {
-              "relay_name": "Název relé",
               "relay_device_type": "Typ zařízení",
               "relay_pulse_duration": "Doba pulsu (milisekundy)"
             },
             "data_description": {
-              "relay_name": "Zobrazený název relé v Home Assistant",
               "relay_device_type": "Dveře vytvoří spínač, vrata vytvoří kryt",
               "relay_pulse_duration": "Délka spínacího pulsu odeslaného relé (ms). Výchozí hodnota je switchOnDuration nakonfigurovaná na zařízení."
             }
@@ -127,12 +157,10 @@
           "relay_2": {
             "name": "Relé 2",
             "data": {
-              "relay_name": "Název relé",
               "relay_device_type": "Typ zařízení",
               "relay_pulse_duration": "Doba pulsu (milisekundy)"
             },
             "data_description": {
-              "relay_name": "Zobrazený název relé v Home Assistant",
               "relay_device_type": "Dveře vytvoří spínač, vrata vytvoří kryt",
               "relay_pulse_duration": "Délka spínacího pulsu odeslaného relé (ms). Výchozí hodnota je switchOnDuration nakonfigurovaná na zařízení."
             }
@@ -140,12 +168,10 @@
           "relay_3": {
             "name": "Relé 3",
             "data": {
-              "relay_name": "Název relé",
               "relay_device_type": "Typ zařízení",
               "relay_pulse_duration": "Doba pulsu (milisekundy)"
             },
             "data_description": {
-              "relay_name": "Zobrazený název relé v Home Assistant",
               "relay_device_type": "Dveře vytvoří spínač, vrata vytvoří kryt",
               "relay_pulse_duration": "Délka spínacího pulsu odeslaného relé (ms). Výchozí hodnota je switchOnDuration nakonfigurovaná na zařízení."
             }
@@ -153,12 +179,10 @@
           "relay_4": {
             "name": "Relé 4",
             "data": {
-              "relay_name": "Název relé",
               "relay_device_type": "Typ zařízení",
               "relay_pulse_duration": "Doba pulsu (milisekundy)"
             },
             "data_description": {
-              "relay_name": "Zobrazený název relé v Home Assistant",
               "relay_device_type": "Dveře vytvoří spínač, vrata vytvoří kryt",
               "relay_pulse_duration": "Délka spínacího pulsu odeslaného relé (ms). Výchozí hodnota je switchOnDuration nakonfigurovaná na zařízení."
             }

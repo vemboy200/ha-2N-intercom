@@ -26,7 +26,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONF_RELAY_DEVICE_TYPE,
-    CONF_RELAY_NAME,
     CONF_RELAY_NUMBER,
     CONF_RELAY_PULSE_DURATION,
     CONF_RELAYS,
@@ -79,7 +78,9 @@ def _build_switch_params(
     else:
         default_pulse_ms = DEFAULT_PULSE_DURATION
 
-    relay_name = override.get(CONF_RELAY_NAME) or f"Relay {relay_number}"
+    # Renaming the entity is done via HA's own entity rename dialog, not a
+    # config option — see the removal of the "name" field on the device step.
+    relay_name = f"Relay {relay_number}"
     pulse_duration = override.get(CONF_RELAY_PULSE_DURATION, default_pulse_ms)
 
     return {

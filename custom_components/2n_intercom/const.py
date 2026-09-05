@@ -25,7 +25,6 @@ CONF_RTSP_USERNAME = "rtsp_username"
 CONF_RTSP_PASSWORD = "rtsp_password"
 
 # Relay configuration keys
-CONF_RELAY_NAME = "relay_name"
 CONF_RELAY_NUMBER = "relay_number"
 CONF_RELAY_DEVICE_TYPE = "relay_device_type"
 CONF_RELAY_PULSE_DURATION = "relay_pulse_duration"

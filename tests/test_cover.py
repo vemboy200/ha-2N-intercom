@@ -116,7 +116,6 @@ class CoverPlatformTests(unittest.IsolatedAsyncioTestCase):
     def _make_relay_config(self, **overrides):
         cfg = {
             "relay_number": 1,
-            "relay_name": "Main Gate",
             "relay_device_type": "gate",
             "relay_pulse_duration": 15000,
         }
@@ -198,7 +197,7 @@ class CoverPlatformTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cover._attr_is_closed)
         self.assertFalse(cover._attr_is_opening)
         self.assertFalse(cover._attr_is_closing)
-        self.assertEqual(cover._attr_name, "Main Gate")
+        self.assertEqual(cover._attr_name, "Relay 1")
         self.assertEqual(cover._attr_unique_id, "entry-1_cover_1")
 
     def test_cover_uses_default_gate_duration(self) -> None:
@@ -207,7 +206,6 @@ class CoverPlatformTests(unittest.IsolatedAsyncioTestCase):
         entry = FakeConfigEntry("entry-1", {"name": "Front Door"})
         relay_config = {
             "relay_number": 2,
-            "relay_name": "Side Gate",
             "relay_device_type": "gate",
         }
         cover = cover_module.TwoNIntercomCover(coordinator, entry, relay_config)

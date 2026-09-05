@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### CI: run the test suite on every push/PR
+- New GitHub Actions workflow (`tests.yml`) runs `python3 -m unittest discover -s tests -t tests` and `validate.py`, alongside the existing hassfest/HACS checks
+- Fixed a test-harness bug this surfaced: `test_config_flow.py`'s `homeassistant.helpers.config_validation` stub was missing `config_entry_only_config_schema`, and since all test files share one `sys.modules` slot for that module, whichever stub loaded last could silently break `test_init.py`'s entire module import — meaning none of its tests actually ran in a full `discover` pass. Test count went from 426 to 463 with this fixed
+
+### Reconfigure/reauth translations
+- The reconfigure step (host/port/protocol/username/password/`verify_ssl`) and reauth step never had translation entries at all, so every field fell back to its raw config key (e.g. a literal `verify_ssl` checkbox label) — added full EN/CS/DE translations for both
+
+### Removed the relay name override
+- Relay entities no longer have a user-configurable name in the options flow — like the earlier removal of the device "name" field, this duplicated Home Assistant's own entity rename dialog. Relays default to `Relay {number}` and are renamed the native way
+
 ### SSDP discovery, with auto-update on IP change
 - 2N devices (including Control4-rebranded DS2/DS2 Mini units) advertise themselves over SSDP; the integration now discovers them automatically instead of requiring the IP to be typed in by hand
 - Discovery matches on manufacturer (`"2N, part of Axis group"`) and extracts host/MAC/friendly name from the SSDP description XML

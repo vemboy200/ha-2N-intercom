@@ -44,6 +44,38 @@
             }
           }
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate 2N Intercom",
+        "description": "The credentials for {host} were rejected. Enter the current username and password.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "Device login username for API access",
+          "password": "Device login password"
+        }
+      },
+      "reconfigure": {
+        "title": "2N Intercom Setup - Reconfigure",
+        "description": "Update the connection settings for this 2N Intercom.",
+        "data": {
+          "host": "IP Address",
+          "port": "Port",
+          "protocol": "Protocol",
+          "username": "Username",
+          "password": "Password",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the intercom (e.g., 192.0.2.100)",
+          "port": "HTTP(S) API port on the device",
+          "protocol": "Connection protocol used to reach the device",
+          "username": "Device login username for API access",
+          "password": "Device login password",
+          "verify_ssl": "Validate the device's SSL certificate when using HTTPS"
+        }
       }
     },
     "error": {
@@ -118,12 +150,10 @@
           "relay_1": {
             "name": "Relay 1",
             "data": {
-              "relay_name": "Relay Name",
               "relay_device_type": "Device Type",
               "relay_pulse_duration": "Pulse Duration (milliseconds)"
             },
             "data_description": {
-              "relay_name": "Displayed name for this relay in Home Assistant",
               "relay_device_type": "Door creates a switch entity, gate creates a cover entity",
               "relay_pulse_duration": "Trigger pulse length sent to the relay (ms). Default is the device-configured switchOnDuration."
             }
@@ -131,12 +161,10 @@
           "relay_2": {
             "name": "Relay 2",
             "data": {
-              "relay_name": "Relay Name",
               "relay_device_type": "Device Type",
               "relay_pulse_duration": "Pulse Duration (milliseconds)"
             },
             "data_description": {
-              "relay_name": "Displayed name for this relay in Home Assistant",
               "relay_device_type": "Door creates a switch entity, gate creates a cover entity",
               "relay_pulse_duration": "Trigger pulse length sent to the relay (ms). Default is the device-configured switchOnDuration."
             }
@@ -144,12 +172,10 @@
           "relay_3": {
             "name": "Relay 3",
             "data": {
-              "relay_name": "Relay Name",
               "relay_device_type": "Device Type",
               "relay_pulse_duration": "Pulse Duration (milliseconds)"
             },
             "data_description": {
-              "relay_name": "Displayed name for this relay in Home Assistant",
               "relay_device_type": "Door creates a switch entity, gate creates a cover entity",
               "relay_pulse_duration": "Trigger pulse length sent to the relay (ms). Default is the device-configured switchOnDuration."
             }
@@ -157,12 +183,10 @@
           "relay_4": {
             "name": "Relay 4",
             "data": {
-              "relay_name": "Relay Name",
               "relay_device_type": "Device Type",
               "relay_pulse_duration": "Pulse Duration (milliseconds)"
             },
             "data_description": {
-              "relay_name": "Displayed name for this relay in Home Assistant",
               "relay_device_type": "Door creates a switch entity, gate creates a cover entity",
               "relay_pulse_duration": "Trigger pulse length sent to the relay (ms). Default is the device-configured switchOnDuration."
             }

@@ -238,12 +238,12 @@ class SwitchAutoDetectionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(added), 0)
 
-    async def test_user_override_name_and_pulse(self) -> None:
+    async def test_user_override_pulse_only(self) -> None:
+        """Name is not user-configurable; only the pulse duration override applies."""
         coordinator = FakeCoordinator(switch_caps=DEVICE_CAPS_ONE_ENABLED)
         entry = FakeConfigEntry("entry-1", {"name": "Intercom"}, options={
             "relays": [{
                 "relay_number": 1,
-                "relay_name": "Haustür",
                 "relay_device_type": "door",
                 "relay_pulse_duration": 3000,
             }],
@@ -256,7 +256,7 @@ class SwitchAutoDetectionTests(unittest.IsolatedAsyncioTestCase):
             lambda entities, update_before_add=False: added.extend(entities),
         )
         self.assertEqual(len(added), 1)
-        self.assertEqual(added[0]._attr_name, "Haustür")
+        self.assertEqual(added[0]._attr_name, "Relay 1")
         self.assertEqual(added[0]._pulse_duration, 3000)
 
     async def test_empty_caps_creates_nothing(self) -> None:

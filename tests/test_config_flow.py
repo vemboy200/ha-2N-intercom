@@ -218,6 +218,13 @@ def _install_homeassistant_stubs() -> None:
     cv_module.boolean = bool
     cv_module.port = int
     cv_module.positive_int = int
+
+    def config_entry_only_config_schema(domain):
+        def _validator(value):
+            return value
+        return _validator
+
+    cv_module.config_entry_only_config_schema = config_entry_only_config_schema
     sys.modules["homeassistant.helpers.config_validation"] = cv_module
     helpers.selector = selector_module
     helpers.config_validation = cv_module
@@ -1095,7 +1102,6 @@ class OptionsFlowTests(unittest.IsolatedAsyncioTestCase):
         result = await flow.async_step_relays(
             {
                 "relay_1": {
-                    "relay_name": "Door",
                     "relay_device_type": "door",
                     "relay_pulse_duration": 3000,
                 },
@@ -1138,12 +1144,10 @@ class OptionsFlowTests(unittest.IsolatedAsyncioTestCase):
         result = await flow.async_step_relays(
             {
                 "relay_1": {
-                    "relay_name": "Door",
                     "relay_device_type": "door",
                     "relay_pulse_duration": 2000,
                 },
                 "relay_2": {
-                    "relay_name": "Gate",
                     "relay_device_type": "gate",
                     "relay_pulse_duration": 15000,
                 },

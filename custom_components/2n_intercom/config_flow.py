@@ -42,7 +42,6 @@ from .const import (
     CONF_MJPEG_WIDTH,
     CONF_PROTOCOL,
     CONF_RELAY_DEVICE_TYPE,
-    CONF_RELAY_NAME,
     CONF_RELAY_NUMBER,
     CONF_RELAY_PULSE_DURATION,
     CONF_RELAYS,
@@ -944,8 +943,10 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
     ) -> ConfigFlowResult:
         """Collect overrides for every auto-detected relay on one page.
 
-        Each relay gets its own collapsible section (name, device type,
-        pulse duration) instead of a separate wizard page per relay. The
+        Each relay gets its own collapsible section (device type, pulse
+        duration) instead of a separate wizard page per relay. Renaming the
+        relay entity itself is done through Home Assistant's own entity
+        rename dialog, not here. The
         relay number is fixed — it comes from the device's
         ``/api/switch/caps`` response — so it's only used to key each
         section and tag the saved override, not shown as an editable field.
@@ -978,12 +979,6 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
             schema_dict[vol.Required(_relay_section_key(relay_number))] = section(
                 vol.Schema(
                     {
-                        vol.Required(
-                            CONF_RELAY_NAME,
-                            default=existing.get(
-                                CONF_RELAY_NAME, f"Relay {relay_number}"
-                            ),
-                        ): cv.string,
                         vol.Required(
                             CONF_RELAY_DEVICE_TYPE,
                             default=existing.get(

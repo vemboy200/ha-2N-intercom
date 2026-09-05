@@ -17,7 +17,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_RELAY_DEVICE_TYPE,
-    CONF_RELAY_NAME,
     CONF_RELAY_NUMBER,
     CONF_RELAY_PULSE_DURATION,
     CONF_RELAYS,
@@ -79,7 +78,10 @@ class TwoNIntercomCover(TwoNIntercomEntity, CoverEntity):  # type: ignore[misc]
 
         self._relay_config = relay_config
         self._relay_number = relay_config[CONF_RELAY_NUMBER]
-        self._relay_name = relay_config[CONF_RELAY_NAME]
+        # Renaming the entity is done via HA's own entity rename dialog, not
+        # a config option — see the removal of the "name" field on the
+        # device step.
+        self._relay_name = f"Relay {self._relay_number}"
         self._pulse_duration = relay_config.get(
             CONF_RELAY_PULSE_DURATION, DEFAULT_GATE_DURATION
         )
