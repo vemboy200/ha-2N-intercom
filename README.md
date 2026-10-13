@@ -1,5 +1,7 @@
 # ha-2N-intercom
 
+[![Tests](https://github.com/mastalir1980/ha-2N-intercom/actions/workflows/tests.yml/badge.svg)](https://github.com/mastalir1980/ha-2N-intercom/actions/workflows/tests.yml)
+
 Home Assistant custom integration for 2N IP Intercom systems with camera, doorbell, relay, call control, and HomeKit support.
 
 ## Supported Devices
@@ -433,6 +435,8 @@ python3 -m unittest discover -s tests -t tests   # 442/442
 python3 validate.py                               # manifest + HACS compliance
 python3 -m py_compile custom_components/2n_intercom/*.py
 ```
+
+The same three checks run on every pull request and push to `main` via `.github/workflows/tests.yml`.
 
 ## Version History
 
