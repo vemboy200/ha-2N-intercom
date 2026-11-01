@@ -3,11 +3,11 @@ id: TASK-76
 title: >-
   Reload the entry once per config change and build DeviceInfo in one
   constructor call
-status: In Progress
+status: To Test
 assignee:
   - '@copilot'
 created_date: '2026-10-31T10:28:00Z'
-updated_date: '2026-11-01 18:47'
+updated_date: '2026-11-01 18:52'
 labels:
   - ha-compat
   - config-flow
@@ -53,14 +53,14 @@ Reauth/reconfigure cannot be exercised by E2E (it does not change real credentia
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The entry registers no update listener: `add_update_listener` and `async_update_options` are removed from `__init__.py`; a unit test asserts setup registers no update listener [unit]
-- [ ] #2 `TwoNIntercomOptionsFlow` extends `config_entries.OptionsFlowWithReload`; a unit test asserts the base class [unit]
-- [ ] #3 Successful reauth ends with `async_update_reload_and_abort(entry, data=merged)` and reason `reauth_successful`, with no separate `async_update_entry` or `async_reload` call; a unit test asserts exactly one reload request and the updated data [unit]
-- [ ] #4 Successful reconfigure ends with `async_update_reload_and_abort` keeping today's data and `allow_insecure` option handling, reason `reconfigure_successful`; unit tests assert exactly one reload and that data and options equal today's values (adapt `test_reconfigure_with_valid_credentials_updates_and_aborts` and `test_reconfigure_stores_and_forwards_insecure_opt_in`) [unit]
-- [ ] #5 An SSDP host change updates the entry and requests exactly one reload via `hass.config_entries.async_schedule_reload`; identity verification and logging are unchanged; a unit test asserts one reload [unit]
-- [ ] #6 Reauth on an entry that is not loaded (setup failed with an auth error) still updates the entry and reloads it once; unit test with a not-loaded entry [unit]
-- [ ] #7 `get_device_info` passes all fields (identifiers, name, manufacturer, model, sw_version and, when present, configuration_url, serial_number, hw_version, connections) to one `DeviceInfo(...)` call; no `info[...] =` writes on DeviceInfo remain in `custom_components/` (checked in the PR diff); existing `DeviceInfoTests` stay green [unit]
-- [ ] #8 Existing E2E tests stay green on the E2E intercom: `test_00_setup` (device sw_version and serial match the device), `test_20_lifecycle::test_reload_entry`, the `test_40` options-flow tests and the `test_firmware` configuration_url check [e2e]
+- [x] #1 The entry registers no update listener: `add_update_listener` and `async_update_options` are removed from `__init__.py`; a unit test asserts setup registers no update listener [unit]
+- [x] #2 `TwoNIntercomOptionsFlow` extends `config_entries.OptionsFlowWithReload`; a unit test asserts the base class [unit]
+- [x] #3 Successful reauth ends with `async_update_reload_and_abort(entry, data=merged)` and reason `reauth_successful`, with no separate `async_update_entry` or `async_reload` call; a unit test asserts exactly one reload request and the updated data [unit]
+- [x] #4 Successful reconfigure ends with `async_update_reload_and_abort` keeping today's data and `allow_insecure` option handling, reason `reconfigure_successful`; unit tests assert exactly one reload and that data and options equal today's values (adapt `test_reconfigure_with_valid_credentials_updates_and_aborts` and `test_reconfigure_stores_and_forwards_insecure_opt_in`) [unit]
+- [x] #5 An SSDP host change updates the entry and requests exactly one reload via `hass.config_entries.async_schedule_reload`; identity verification and logging are unchanged; a unit test asserts one reload [unit]
+- [x] #6 Reauth on an entry that is not loaded (setup failed with an auth error) still updates the entry and reloads it once; unit test with a not-loaded entry [unit]
+- [x] #7 `get_device_info` passes all fields (identifiers, name, manufacturer, model, sw_version and, when present, configuration_url, serial_number, hw_version, connections) to one `DeviceInfo(...)` call; no `info[...] =` writes on DeviceInfo remain in `custom_components/` (checked in the PR diff); existing `DeviceInfoTests` stay green [unit]
+- [x] #8 Existing E2E tests stay green on the E2E intercom: `test_00_setup` (device sw_version and serial match the device), `test_20_lifecycle::test_reload_entry`, the `test_40` options-flow tests and the `test_firmware` configuration_url check [e2e]
 - [ ] #9 After the merge, the staging HA system log shows no `has an update listener` or `OptionsFlowWithReload` message for `2n_intercom` after an HA restart [tester]
 - [ ] #10 On staging, Jan changes one option (e.g. scan interval) and runs one reconfigure with unchanged values: each time the entry returns to loaded, entities come back and the HA log shows one reload per action [jan]
 <!-- AC:END -->
@@ -93,3 +93,19 @@ AC #7 evidence: existing DeviceInfoTests passed; test_device_info_constructs_all
 AC #8 pending: existing test_00_setup, test_20_lifecycle::test_reload_entry, test_40_options_flow and test_firmware coverage is unchanged; no E2E/network-device commands were run on the VM. The orchestrator must obtain e2e-pi evidence.
 AC #9 and AC #10 remain manual post-merge staging checks for the tester and Jan. Acceptance criteria remain unchecked and status remains In Progress for orchestrator finalization.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented by the headless coder. Checks green on b464582a3 after 0 fix round(s): e2e-pi=pass, validate=pass, validate=pass. PR: https://github.com/mastalir1980/ha-2N-intercom/pull/117. To Test takes effect when the PR is merged.
+AC #1: Diff removes add_update_listener call and async_update_options from __init__.py; grep of custom_components finds no remaining references. tests/test_init.py::test_setup_registers_no_update_listener runs async_setup_entry and asserts add_update_listener not called, entry._update_listener is None, no reload. Full suite (796 tests) passes. (proven)
+AC #2: config_flow.py: TwoNIntercomOptionsFlow(config_entries.OptionsFlowWithReload). tests/test_config_flow.py::OptionsFlowTests::test_options_flow_uses_reload_base_class asserts issubclass against the stubbed OptionsFlowWithReload. (proven)
+AC #3: Reauth now returns self.async_update_reload_and_abort(entry, data=merged, reason='reauth_successful'); no separate async_update_entry/async_reload remain. test_reauth_confirm_with_valid_credentials... asserts async_update_reload_and_abort called once with data and reason, one update call, one reload, options unchanged. (proven)
+AC #4: Reconfigure returns async_update_reload_and_abort with data=merged, options={**existing, allow_insecure}, reason='reconfigure_successful'. Adapted test_reconfigure_with_valid_credentials_updates_and_aborts and test_reconfigure_stores_and_forwards_insecure_opt_in assert call args, entry.data/options equal to previous values, exactly one update and one reload (both allow_insecure values); new test_reconfigure_unchanged_values_reloads_once. (proven)
+AC #5: SSDP path keeps async_update_entry and now calls hass.config_entries.async_schedule_reload(entry.entry_id); identity verification untouched. The SSDP host-change test asserts scheduled_reload_calls == [entry_id], one reload, one update with the new host. (proven)
+AC #6: test_reauth_reloads_entry_after_auth_failed_setup uses an entry in state 'setup_error' with no runtime_data; asserts updated data, options untouched, exactly one update and one scheduled reload, reason reauth_successful. HA's async_update_reload_and_abort reloads by default even when data is unchanged. (proven)
+AC #7: coordinator.py get_device_info collects optional fields in kwargs and makes a single _DeviceInfo(...) call; grep shows no info[...] writes in custom_components (event.py hits are unrelated dicts). New test_device_info_constructs_all_fields_once_for_both_ha_shapes asserts constructor called once with exact fields for dict and a frozen kw_only dataclass shape (UNDEFINED for absent fields); existing DeviceInfoTests still pass. (proven)
+AC #8: No e2e test files modified; the orchestrator reports PR check e2e-pi green on this head, covering test_00_setup, test_20_lifecycle::test_reload_entry, test_40 options flow and test_firmware. Code paths changed are only reload wiring and DeviceInfo construction, with unit coverage. (proven)
+AC #9: After merge, tester agent must check the staging HA system log after an HA restart for no 'has an update listener' / OptionsFlowWithReload messages for 2n_intercom. (manual)
+AC #10: Jan must change one option and run one reconfigure with unchanged values on staging, confirming the entry returns to loaded, entities return and the log shows one reload per action. (manual)
+<!-- SECTION:FINAL_SUMMARY:END -->
