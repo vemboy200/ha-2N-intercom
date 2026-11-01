@@ -260,6 +260,8 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
         self._ring_filter_peer = self._normalize_peer(called_id)
         self._last_called_peer: str | None = None
         self._called_peers: dict[str | None, set[str]] = {}
+        self._session_buttons: dict[str, int] = {}
+        self._last_ring_button: int | None = None
         self._peer_session_id: str | None = None
         self._last_call_state_value: str = "idle"
         self._ring_pulse_until: datetime | None = None
@@ -289,6 +291,17 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
         # Optional ring on a physical call-button press (KeyPressed)
         self._ring_on_keypress = ring_on_keypress
         self._keypress_clear_handle: asyncio.TimerHandle | None = None
+
+    @staticmethod
+    def _parse_button_number(value: object) -> int | None:
+        """Return a plain numeric session button in the device's allowed range."""
+        if not isinstance(value, str):
+            return None
+        value = value.strip()
+        if not re.fullmatch(r"[0-9]{1,3}", value):
+            return None
+        number = int(value)
+        return number if 1 <= number <= 150 else None
 
     @staticmethod
     def _normalize_peer(peer: str | None) -> str | None:
@@ -464,6 +477,7 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
         # A press has no peer; don't let the ring event report the peer of
         # an earlier call.
         self._last_called_peer = None
+        self._last_ring_button = int(key[1:])
         self._ring_count += 1
         if self._ring_snapshot_enabled:
             self.hass.async_create_task(self._async_capture_ring_snapshot())
@@ -1007,6 +1021,11 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
             )
             return False
 
+        if event_name == "CallSessionStateChanged" and originator == "button":
+            button = self._parse_button_number(params.get("info"))
+            if session_id is not None and button is not None:
+                self._session_buttons[session_id] = button
+
         if (
             state in self._TERMINAL_CALL_STATES
             and not (self._peer_session_id is None and None in self._called_peers)
@@ -1044,6 +1063,10 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
             # CallStateChanged and CallSessionStateChanged both report one
             # ring; count it and capture the snapshot only on the first.
             if not self._ring_detected:
+                self._last_ring_button = (
+                    self._session_buttons.get(peer_session_id)
+                    if peer_session_id is not None else None
+                )
                 self._ring_count += 1
                 if self._ring_snapshot_enabled:
                     self.hass.async_create_task(self._async_capture_ring_snapshot())
@@ -1069,8 +1092,10 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
             decision = "rang" if ring_allowed else "filtered by peer"
         _LOGGER.debug(
             "Call event %s state=%r direction=%r originator=%r "
-            "session=%r peers=%s filter=%s decision=%s",
+            "session=%r button=%r peers=%s filter=%s decision=%s",
             event_name, state, direction, originator, peer_session_id,
+            self._session_buttons.get(peer_session_id)
+            if peer_session_id is not None else None,
             sorted(peers), self._ring_filter_peer or "all", decision,
         )
         # A single parallel call can end before the session's other calls ring.
@@ -1079,6 +1104,8 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
             and state in self._TERMINAL_CALL_STATES
         ):
             self._called_peers.pop(peer_session_id, None)
+            if peer_session_id is not None:
+                self._session_buttons.pop(peer_session_id, None)
             if self._peer_session_id == peer_session_id:
                 self._peer_session_id = None
 
@@ -1596,6 +1623,11 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
     def called_peer(self) -> str | None:
         """Return the last called peer from call status."""
         return self._last_called_peer
+
+    @property
+    def last_ring_button(self) -> int | None:
+        """Return the button number known when the last ring was counted."""
+        return self._last_ring_button
 
     @property
     def call_state(self) -> str | None:

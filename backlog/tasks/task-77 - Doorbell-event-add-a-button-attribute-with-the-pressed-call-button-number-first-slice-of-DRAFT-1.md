@@ -3,11 +3,11 @@ id: TASK-77
 title: >-
   Doorbell event: add a button attribute with the pressed call button number
   (first slice of DRAFT-1)
-status: To Do
+status: In Progress
 assignee:
   - '@copilot'
 created_date: '2026-11-01T19:26:00Z'
-updated_date: '2026-11-01T19:26:00Z'
+updated_date: '2026-11-01 19:39'
 labels:
   - ring-detection
   - doorbell
@@ -23,7 +23,7 @@ references:
   - docs/ARCHITECTURE.md
   - docs/API_REFERENCE.md
   - backlog/docs/analysis/doc-1 - Analysis-DRAFT-1-per-button-doorbell.md
-  - https://github.com/mastalir1980/ha-2N-intercom/issues/10
+  - 'https://github.com/mastalir1980/ha-2N-intercom/issues/10'
 priority: medium
 type: feature
 ordinal: 83000
@@ -66,26 +66,21 @@ Why: an intercom with more than one call button cannot tell an automation which 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. `coordinator.py`, state: add `self._session_buttons: dict[str, int]` (session id -> button number) and `self._last_ring_button: int | None = None` next to `_last_called_peer` / `_called_peers` (`__init__`, around the `_called_peers` declaration). Add a property `last_ring_button` next to `called_peer`.
-2. `coordinator.py`, parsing: add a small static helper that turns a value into a button number: `info` must be a string of 1-3 digits after `strip()`, value 1..150 (the 2N manual allows `%1`..`%150` for KeyPressed; keep the existing `_CALL_BUTTON_KEY` behaviour unchanged); anything else gives `None`. Do not treat an arbitrary string as a button.
-3. `coordinator.py`, call events (`_process_log_event`, the `CallStateChanged` / `CallSessionStateChanged` branch):
-   - for `CallSessionStateChanged` with `originator == "button"` and a valid `info`, store `self._session_buttons[session_id] = number` (only when `session_id` is not None);
-   - where a ring is counted (`if not self._ring_detected:` ... `self._ring_count += 1`), set `self._last_ring_button = self._session_buttons.get(peer_session_id)` before the counter is exposed, so a ring that is counted on the `CallStateChanged` event still gets the button from the earlier `initialized` session event, and a ring without a stored button sets `None`;
-   - pop `self._session_buttons[peer_session_id]` where the code already pops `_called_peers` on a terminal session state (end of the branch), so the dict cannot grow;
-   - add `button=%r` (the stored number or `None`) to the final debug line of the call-event branch only. Do not change the other debug lines. Never log keypad keys.
-4. `coordinator.py`, `_process_key_pressed_event`: after the `_CALL_BUTTON_KEY` match, `self._last_ring_button = int(key[1:])` in the same place where `_last_called_peer` is set to `None` and the ring is counted. The existing guard (`if self._ring_detected: return False`) stays first, so a ring already counted by call events keeps its button and is not changed by the later `KeyPressed`.
-5. `event.py`, `_handle_coordinator_update`: add `if self.coordinator.last_ring_button is not None: attributes["button"] = self.coordinator.last_ring_button`. Do not add an event type, an entity, a translation key or a config option (no change in `strings.json`, `translations/*`, `icons.json`).
-6. Tests (unit stubs only, no real HA): 
-   - `tests/test_coordinator.py`: replay the captured press sequence (see the existing `originator: button` sequence near the TASK-29 capture) with `info="1"`, then with `info="2"` and `"12"`; a press without `info`; non-numeric and out-of-range `info` (`"abc"`, `"0"`, `"151"`, `""`); an incoming call (`originator=incoming`, no ring); a second press without `info` after a press with `info="2"` must give no button; two sessions at once keep their own buttons; the session entry is gone after `terminated`; a ring counted on `CallStateChanged` before the session ringing event still reports the button.
-   - `tests/test_coordinator_keypress.py`: `%2` rings with button 2; keypad keys still never ring; `KeyPressed` first then call events: one ring, button unchanged; call events first then `KeyPressed`: one ring, button from the session; `test_key_values_are_never_logged` stays green.
-   - `tests/test_event.py`: the emitted `ring` carries `button` as an int when known and has no `button` key when unknown; existing attribute tests stay green.
-7. Docs: `README.md` (doorbell event bullet near line 39 and the ring-on-keypress paragraph: add the `button` attribute, an automation example `trigger.event.attributes.button`, and the note that only button 1 has been verified on real hardware and older firmware may not send it); `docs/ARCHITECTURE.md` (the ring-detection paragraph around the `ring_on_keypress` bullet: how the button is stored per session and cleared); `docs/API_REFERENCE.md` (firmware quirks section: `info` is only on `CallSessionStateChanged`, not on `CallStateChanged`). No CHANGELOG or version change (release task only).
-
-Must not change: ring detection rules (TASK-31: calls into the intercom never ring, `originator` must be present and not `incoming` for session rings), the `called_id` filter, `KEYPRESS_RING_HOLD`, the snapshot, the one-event-per-ring guard, the number of doorbell entities (TASK-55). One bad event must not break the subscription: invalid `info` is ignored, never raised. No keypad key value in any log line.
+1. Add optional per-session button storage and last_ring_button, parse only plain numeric session info in range 1..150, and clear session storage on terminal states. Preserve ring detection, called_id filtering, keypress matching and deduplication; set button only when a new ring is counted and include it in the existing call-event debug line. 2. Expose the optional integer button attribute on the existing doorbell ring event without new entities, options, event types or translations. 3. Extend coordinator, keypress and event unit tests for captured event ordering, invalid/missing values, isolation, cleanup and both keypress/call orders; retain the existing read-only E2E doorbell entity check required by AC #9. 4. Update README.md, docs/ARCHITECTURE.md and docs/API_REFERENCE.md with the optional attribute, automation example and real-hardware limitation. 5. Run the full Python unit suite, validate.py and integration py_compile, record implementation evidence in notes, and commit locally without checking criteria or finalizing the task. E2E and manual checks remain with the orchestrator, tester and Jan.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Approved by Jan in Telegram, 2026-11-01. Facts: button press on fw 3.x sends originator=button and info="1" on CallSessionStateChanged only (TASK-29 capture 2026-10-13; read-only capture by the tester agent 2026-11-01). Not verified: info for buttons 2 and up, fw 2.50. Out of scope (stay in DRAFT-1): one event type or entity per button, button names, per-button filter, migration of called_id.
+
+Implemented optional session button metadata and last_ring_button. Only plain numeric string info from originator=button session events is accepted (trimmed, 1-3 ASCII digits, 1..150); invalid or missing values remain optional and never affect ring detection. A counted ring takes its own session button or None, terminal session states remove stored buttons, and accepted KeyPressed call buttons provide their integer number only when counting a new ring. The existing call-event debug line now includes the stored button. No ring rules, called_id filtering, key matching/hold, snapshots, entities, event types, options, translations, version or CHANGELOG were changed.
+
+Unit evidence: SessionButtonTests and DoorbellEventTests replay the TASK-29 captured order for 1, 2 and 12, including the earlier initialized event and CallStateChanged ringing before session ringing. Missing/invalid info, wrong originators, non-string values, sessionless metadata, trimmed/range-boundary values, a second press without info, concurrent session isolation and every terminal state are covered. KeyPressedRingTests and DoorbellEventTests cover %2, both keypress/call event orders, stable metadata after a duplicate event and preserving one ring/snapshot. Existing TASK-31 and called_id tests remain unchanged; test_key_values_are_never_logged remains unchanged and passes.
+
+README.md, docs/ARCHITECTURE.md and docs/API_REFERENCE.md describe the optional integer attribute, session storage/cleanup, info being absent from CallStateChanged, and only button 1 being verified on real hardware. The README automation uses the correct HA event-entity state-trigger path trigger.to_state.attributes.button (matching the existing blueprint), and explicitly distinguishes it from the plan wording trigger.event.attributes.button.
+
+Local gates passed with Python 3.12.15: python3 -m unittest discover -s tests -t tests (811 tests), python3 validate.py and python3 -m py_compile custom_components/2n_intercom/*.py. The full suite still emits warnings from existing API failure-test mocks outside this task; those files were not changed.
+
+AC #9: the existing read-only E2E test_10_entities::test_doorbell_event_is_available_and_shares_camera_device is retained unchanged, as requested by the task. E2E was not run from the VM; e2e-pi must provide the remaining evidence. New button metadata is proven locally by unit replay; a real press is intentionally the manual AC #11, not an automated device action. AC #10 remains with the tester after merge, and AC #11 remains with Jan. No acceptance criteria were checked and the task remains In Progress for independent review and orchestration.
 <!-- SECTION:NOTES:END -->

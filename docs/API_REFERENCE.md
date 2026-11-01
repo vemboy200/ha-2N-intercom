@@ -346,3 +346,16 @@ Zařízení má vlastní plánovač aktualizací. Konfigurace (cesty z UI a ze z
   Příchozí hovor může být auto-answered ve stejné sekundě (`ringing` →
   `connected`). Další hodnoty `originator` (klávesnice, displej, API) zatím
   nepozorovány; zda je posílá fw 2.50, neověřeno.
+- **Doorbell button metadata** (fw 3.x captures, TASK-29 and TASK-77):
+  `info="1"` with `originator=button` was present in all four
+  `CallSessionStateChanged` events (`initialized`, `connecting`, `ringing`,
+  `terminated`). `CallStateChanged` has no `info` field. The integration
+  remembers the button per explicit session ID and includes it as the
+  optional integer `button` attribute of the existing `ring` event.
+  Only a plain numeric string of 1-3 digits after trimming, with value
+  1..150, is accepted; missing, empty, non-numeric or out-of-range values
+  are ignored without affecting ring detection. With `ring_on_keypress`,
+  the existing accepted call-button keys `%1`..`%54` supply their number
+  directly from `KeyPressed`. Only button 1 has been verified on real
+  hardware; numbers 2 and above and metadata on fw 2.50 remain unverified.
+  Older firmware may omit the metadata, in which case `button` is absent.

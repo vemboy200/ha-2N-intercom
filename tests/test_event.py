@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock
 
 from _stubs import ENTITY_PATH, EVENT_PATH, install_event_stubs, load_module
-from test_coordinator import load_coordinator_module
+from test_coordinator import _UNDEFINED, _button_press_sequence, load_coordinator_module
 
 
 def load_event_module():
@@ -164,7 +164,7 @@ class DoorbellEventTests(unittest.IsolatedAsyncioTestCase):
         coordinator.api.async_pull_log = AsyncMock(side_effect=pull_and_stop)
         await coordinator._async_run_log_subscription(1)
 
-        entity._trigger_event.assert_called_once_with("ring", {})
+        entity._trigger_event.assert_called_once_with("ring", {"button": 1})
         self.assertEqual(coordinator.ring_count, 1)
         self.assertEqual(coordinator.data.last_ring_time, coordinator.last_ring_time)
         self.assertIsNone(coordinator.called_peer)
@@ -197,6 +197,71 @@ class DoorbellEventTests(unittest.IsolatedAsyncioTestCase):
                     coordinator._publish_event_state()
 
                     expected = {} if key_index == 0 and publish_each else {"called_peer": "100"}
+                    if key_index == 0:
+                        expected["button"] = 1
+                    entity._trigger_event.assert_called_once_with("ring", expected)
+                    self.assertEqual(coordinator.ring_count, 1)
+
+    async def test_captured_sequences_emit_optional_integer_button_with_caller_metadata(self) -> None:
+        for info in ("1", "2", "12", _UNDEFINED, None, "", "abc", "0", "151"):
+            for publish_each in (True, False):
+                with self.subTest(info=info, publish_each=publish_each):
+                    coordinator = self._coordinator()
+                    coordinator.data.caller_info = {"name": "Visitor", "number": "100"}
+                    entity = self._entity(coordinator)
+                    await entity.async_added_to_hass()
+                    for event in _button_press_sequence(info):
+                        coordinator._process_log_event(event)
+                        if publish_each:
+                            coordinator._publish_event_state()
+                    coordinator._publish_event_state()
+                    expected = {
+                        "called_peer": "100", "caller_name": "Visitor", "caller_number": "100",
+                    }
+                    if info in ("1", "2", "12"):
+                        expected["button"] = int(info)
+                        self.assertIs(type(entity._last_event_extra_attributes["button"]), int)
+                    else:
+                        self.assertNotIn("button", entity._last_event_extra_attributes)
+                    entity._trigger_event.assert_called_once_with("ring", expected)
+                    self.assertEqual(entity._last_event_extra_attributes, expected)
+
+    async def test_second_press_without_info_does_not_emit_previous_button(self) -> None:
+        coordinator = self._coordinator()
+        entity = self._entity(coordinator)
+        await entity.async_added_to_hass()
+        for event in _button_press_sequence("2"):
+            coordinator._process_log_event(event)
+            coordinator._publish_event_state()
+        self.assertEqual(entity._last_event_extra_attributes["button"], 2)
+        for event in _button_press_sequence(session=33):
+            coordinator._process_log_event(event)
+            coordinator._publish_event_state()
+        self.assertEqual(entity._trigger_event.call_count, 2)
+        self.assertEqual(entity._last_event_extra_attributes, {"called_peer": "100"})
+
+    async def test_captured_call_and_keypress_emit_same_button_in_either_order(self) -> None:
+        for key_first in (True, False):
+            for publish_each in (True, False):
+                with self.subTest(key_first=key_first, publish_each=publish_each):
+                    coordinator = self._coordinator(ring_on_keypress=True)
+                    entity = self._entity(coordinator)
+                    await entity.async_added_to_hass()
+                    events = _button_press_sequence("2")
+                    events.insert(
+                        0 if key_first else 5,
+                        {"event": "KeyPressed", "params": {"key": "%2"}},
+                    )
+                    for event in events:
+                        coordinator._process_log_event(event)
+                        if publish_each:
+                            coordinator._publish_event_state()
+                        if coordinator.ring_count:
+                            self.assertEqual(coordinator.last_ring_button, 2)
+                    coordinator._publish_event_state()
+                    expected = {"button": 2}
+                    if not key_first or not publish_each:
+                        expected["called_peer"] = "100"
                     entity._trigger_event.assert_called_once_with("ring", expected)
                     self.assertEqual(coordinator.ring_count, 1)
 

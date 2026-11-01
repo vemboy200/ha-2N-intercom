@@ -36,7 +36,7 @@ Home Assistant custom integration for 2N IP Intercom systems with camera, doorbe
 - **Event-driven ring detection** via `/api/log/subscribe` + `/api/log/pull` background loop with automatic re-subscribe and exponential backoff
 - Only calls started by the intercom trigger the doorbell (for example, a visitor button press); calls into the intercom from My2N, Control4, or a SIP phone do not
 - **Event-driven state updates** for switches, IO, SIP registration, and device config changes via the same subscription channel
-- **Doorbell event** (`event.<intercom>_doorbell`, device class `doorbell`) is the only doorbell entity. It emits one `ring` per intercom-started ring, with called peer and caller name/number when known. HomeKit automatically links it to the camera on the same device
+- **Doorbell event** (`event.<intercom>_doorbell`, device class `doorbell`) is the only doorbell entity. It emits one `ring` per intercom-started ring, with `button` (the integer call-button number), called peer and caller name/number when known. The button number is read from the intercom event; only button 1 has been verified on real hardware. Older firmware may not send it, so an unknown `button` is omitted without changing ring detection. HomeKit automatically links it to the camera on the same device
 - **`2n_intercom.answer_call`** and **`2n_intercom.hangup_call`** services that target a config entry and (optionally) a specific session id, with `reason` selector (`normal`/`rejected`/`busy`)
 - Diagnostic sensors: SIP registration status, call state with `active_session_id` attribute
 
@@ -325,7 +325,7 @@ Saved relay names, door/gate types, and pulse durations are preserved for relays
 
 For Called ID (`called_id`), the part after `/` is ignored when matching peers, so `1234567890/2` matches `1234567890`.
 
-**Ring on call-button press** (`ring_on_keypress`, off by default): a call button with no call destination only reports `KeyPressed` and never starts a call, so without this option it never rings. With it on, a press of a call button (reported as `%1`, `%2`, …) rings the doorbell once, also when the press starts a call. Keypad keys (digits, `*`, `#`) never ring, so entering a PIN does not ring. Called ID (`called_id`) does not apply to button presses, because a press has no peer: with a specific Called ID, every call-button press rings. The option only takes effect when the device lists `KeyPressed` in `/api/log/caps`. A ring from a button press carries no `called_peer` attribute. When a press also places a call, the ring can fire on the press before the call is known, so that ring has no `called_peer` either; leave the option off if your automations rely on it.
+**Ring on call-button press** (`ring_on_keypress`, off by default): a call button with no call destination only reports `KeyPressed` and never starts a call, so without this option it never rings. With it on, a press of a call button (reported as `%1`, `%2`, …) rings the doorbell once, also when the press starts a call. Keypad keys (digits, `*`, `#`) never ring, so entering a PIN does not ring. Called ID (`called_id`) does not apply to button presses, because a press has no peer: with a specific Called ID, every call-button press rings. The option only takes effect when the device lists `KeyPressed` in `/api/log/caps`. A ring from a button press carries `button` (for example, `%2` gives the integer `2`) but no `called_peer` attribute. When a press also places a call, the ring can fire on the press before the call is known, so that ring has no `called_peer` either; leave the option off if your automations rely on it. The first event that counts the ring determines its button; later events of the same press do not change it.
 
 The default grant-access user is displayed by directory name, even when the stored UUID uses different letter case. Unnamed directory entries and unknown stored users have explicit localized labels. If the directory cannot be loaded, the form shows a warning; the stored user remains selected and you can still submit the options without changing it.
 
@@ -452,6 +452,38 @@ To import:
 2. Reload automations
 3. Create a new automation from the blueprint and select your doorbell event and notification service. Existing automations must reselect the event entity after upgrading
 
+### Filter a doorbell ring by call-button number
+
+Use the optional integer `button` attribute to select a call button without adding
+another doorbell entity or changing the Called ID filter. For a state trigger on
+the event entity, the attribute is `trigger.to_state.attributes.button`, not
+`trigger.event.attributes.button`. The example uses `.get('button')` so a ring
+without a known button does not match. Numbers other than 1 are not yet verified
+on real hardware.
+
+```yaml
+automation:
+  - alias: "Notify on call button 2"
+    trigger:
+      - platform: state
+        entity_id: event.home_intercom_doorbell
+    condition:
+      - condition: template
+        value_template: >
+          {{ trigger.from_state is not none
+             and trigger.from_state.state != 'unavailable'
+             and trigger.to_state is not none
+             and trigger.to_state.state not in ['unknown', 'unavailable']
+             and trigger.to_state.state != trigger.from_state.state
+             and trigger.to_state.attributes.get('event_type') == 'ring'
+             and not trigger.to_state.attributes.get('restored', false)
+             and trigger.to_state.attributes.get('button') == 2 }}
+    action:
+      - service: persistent_notification.create
+        data:
+          message: "Call button {{ trigger.to_state.attributes.button }} was pressed."
+```
+
 ### Quick YAML example: open door on doorbell
 
 ```yaml
@@ -517,7 +549,7 @@ The integration uses two data channels:
 - **Gate control** — garage-door-style open/close via cover entity
 - **Call management** — answer or reject incoming calls from automations using the `answer_call` / `hangup_call` services
 - **Audited door opening** — open the door as a specific directory user with `grant_access`, so the access shows up in the device's access log
-- **Multi-button setups** — filter doorbell events by ringing account (peer) to distinguish front door from side entrance
+- **Multi-button setups** — filter automations by the optional `button` attribute, or filter doorbell events by ringing account (peer). Only button 1 has been verified on real hardware
 - **HomeKit bridge** — expose camera as video doorbell, relays as switches/garage doors in Apple Home
 
 ## Known Limitations

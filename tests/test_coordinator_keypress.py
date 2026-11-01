@@ -85,6 +85,7 @@ class KeyPressedRingTests(_CoordinatorTestCase):
 
         self.assertTrue(coordinator.ring_active)
         self.assertEqual(coordinator.ring_count, 1)
+        self.assertEqual(coordinator.last_ring_button, 1)
         self.assertIsNotNone(coordinator.last_ring_time.tzinfo)
         self.assertEqual(len(api.snapshot_calls), 1)
         self.assertEqual(coordinator.ring_snapshot, b"jpeg-1")
@@ -96,6 +97,8 @@ class KeyPressedRingTests(_CoordinatorTestCase):
         await hass.drain()
 
         self.assertEqual(coordinator.ring_count, 1)
+        self.assertEqual(coordinator.last_ring_button, 2)
+        self.assertIs(type(coordinator.last_ring_button), int)
         self.assertEqual(api.snapshot_calls, [])
 
     async def test_keypad_keys_never_ring(self) -> None:
@@ -111,6 +114,7 @@ class KeyPressedRingTests(_CoordinatorTestCase):
 
                 self.assertFalse(coordinator.ring_active)
                 self.assertEqual(coordinator.ring_count, 0)
+                self.assertIsNone(coordinator.last_ring_button)
                 self.assertEqual(api.snapshot_calls, [])
 
     async def test_all_documented_call_button_keys_ring(self) -> None:
@@ -120,6 +124,7 @@ class KeyPressedRingTests(_CoordinatorTestCase):
                 self.assertTrue(coordinator._process_log_event(_key(f"%{number}")))
                 await hass.drain()
                 self.assertEqual(coordinator.ring_count, 1)
+                self.assertEqual(coordinator.last_ring_button, number)
                 self.assertEqual(len(api.snapshot_calls), 1)
 
     async def test_key_values_are_never_logged(self) -> None:
@@ -207,6 +212,57 @@ class KeyPressedRingTests(_CoordinatorTestCase):
                 )
                 self.assertFalse(coordinator.ring_active)
                 self.assertEqual(coordinator.ring_count, 1)
+
+    async def test_button_is_fixed_when_keypress_and_call_events_arrive_in_either_order(self) -> None:
+        for key_first in (True, False):
+            with self.subTest(key_first=key_first):
+                coordinator, hass, api = self._make_ring()
+                key_event = _key("%2")
+                call_events = [
+                    _call("CallSessionStateChanged", "initialized", originator="button", info="2"),
+                    _call("CallStateChanged", "connecting", direction="outgoing"),
+                    _call("CallSessionStateChanged", "connecting", originator="button", info="2"),
+                    _call("CallStateChanged", "ringing", direction="outgoing"),
+                    _call("CallSessionStateChanged", "ringing", originator="button", info="2"),
+                ]
+                events = (
+                    [key_event, *call_events] if key_first else [*call_events, key_event]
+                )
+                for event in events:
+                    coordinator._process_log_event(event)
+                    if coordinator.ring_count:
+                        self.assertEqual(coordinator.ring_count, 1)
+                        self.assertEqual(coordinator.last_ring_button, 2)
+                await hass.drain()
+                self.assertEqual(len(api.snapshot_calls), 1)
+
+    async def test_duplicate_event_does_not_replace_counted_button(self) -> None:
+        for key_first in (True, False):
+            with self.subTest(key_first=key_first):
+                coordinator, hass, _api = self._make_ring()
+                session_event = _call(
+                    "CallSessionStateChanged", "ringing", originator="button", info="12",
+                )
+                key_event = _key("%2")
+                events = (
+                    (key_event, session_event) if key_first else (session_event, key_event)
+                )
+                for event in events:
+                    coordinator._process_log_event(event)
+                    self.assertEqual(coordinator.ring_count, 1)
+                    self.assertEqual(coordinator.last_ring_button, 2 if key_first else 12)
+                await hass.drain()
+
+    async def test_keypress_overwrites_previous_call_button(self) -> None:
+        coordinator, hass, _api = self._make_ring()
+        coordinator._process_log_event(_call(
+            "CallSessionStateChanged", "ringing", originator="button", info="12",
+        ))
+        coordinator._process_log_event(_call("CallSessionStateChanged", "terminated"))
+        coordinator._process_log_event(_key("%2"))
+        await hass.drain()
+        self.assertEqual(coordinator.ring_count, 2)
+        self.assertEqual(coordinator.last_ring_button, 2)
 
     async def test_press_ring_does_not_report_an_earlier_calls_peer(self) -> None:
         coordinator, hass, _api = self._make_ring()

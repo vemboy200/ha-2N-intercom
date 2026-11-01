@@ -469,6 +469,212 @@ class TwoNIntercomCoordinatorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(coordinator._log_listener_task)
 
 
+def _button_press_sequence(info=_UNDEFINED, *, session=32):
+    """Replay the TASK-29 captured order with neutral session and peer values."""
+    session_info = {"originator": "button"}
+    if info is not _UNDEFINED:
+        session_info["info"] = info
+    return [
+        {"event": "CallSessionStateChanged", "params": {
+            "state": "initialized", "session": session, **session_info,
+        }},
+        {"event": "CallStateChanged", "params": {
+            "state": "connecting", "direction": "outgoing", "session": session,
+            "peer": "sip:100@example.com",
+        }},
+        {"event": "CallSessionStateChanged", "params": {
+            "state": "connecting", **session_info,
+        }},
+        {"event": "CallStateChanged", "params": {
+            "state": "ringing", "direction": "outgoing", "session": session,
+        }},
+        {"event": "CallSessionStateChanged", "params": {
+            "state": "ringing", **session_info,
+        }},
+        {"event": "CallStateChanged", "params": {
+            "state": "terminated", "direction": "outgoing", "reason": "normal",
+        }},
+        {"event": "CallSessionStateChanged", "params": {
+            "state": "terminated", **session_info,
+        }},
+    ]
+
+
+class SessionButtonTests(unittest.IsolatedAsyncioTestCase):
+    """Optional button metadata must not change ring detection."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.coordinator_module = load_coordinator_module()
+
+    def _make_coordinator(self):
+        return self.coordinator_module.TwoNIntercomCoordinator(
+            types.SimpleNamespace(), types.SimpleNamespace()
+        )
+
+    async def test_captured_button_sequences_store_integer_for_first_ring(self) -> None:
+        for info in ("1", "2", "12"):
+            with self.subTest(info=info):
+                coordinator = self._make_coordinator()
+                self.assertIsNone(coordinator.last_ring_button)
+                for index, event in enumerate(_button_press_sequence(info)):
+                    self.assertTrue(coordinator._process_log_event(event))
+                    self.assertEqual(coordinator.ring_count, int(index >= 3))
+                    if index >= 3:
+                        self.assertEqual(coordinator.last_ring_button, int(info))
+                        self.assertIs(type(coordinator.last_ring_button), int)
+                    else:
+                        self.assertIsNone(coordinator.last_ring_button)
+                self.assertEqual(coordinator._session_buttons, {})
+
+    async def test_call_ringing_uses_earlier_initialized_session_button(self) -> None:
+        coordinator = self._make_coordinator()
+        coordinator._process_log_event({
+            "event": "CallSessionStateChanged",
+            "params": {
+                "state": "initialized", "sessionNumber": 42,
+                "originator": " BUTTON ", "info": "12",
+            },
+        })
+        self.assertEqual(coordinator._session_buttons, {"42": 12})
+        self.assertIsNone(coordinator.last_ring_button)
+        with self.assertLogs(self.coordinator_module._LOGGER, level="DEBUG") as logs:
+            coordinator._process_log_event({
+                "event": "CallStateChanged",
+                "params": {"state": "ringing", "session": 42, "direction": "outgoing"},
+            })
+        self.assertEqual(coordinator.ring_count, 1)
+        self.assertEqual(coordinator.last_ring_button, 12)
+        self.assertIn("button=12", logs.output[0])
+
+    async def test_missing_and_invalid_info_leave_button_unknown(self) -> None:
+        for info in (
+            _UNDEFINED, None, "", " ", "abc", "0", "151", "1234", "+2",
+            "2.0", "%2", "1 2", "\u00b2", "\uff12", 2, True, {}, [],
+        ):
+            with self.subTest(info=info):
+                coordinator = self._make_coordinator()
+                with self.assertLogs(self.coordinator_module._LOGGER, level="DEBUG") as logs:
+                    for event in _button_press_sequence(info):
+                        self.assertTrue(coordinator._process_log_event(event))
+                        self.assertIsNone(coordinator.last_ring_button)
+                        self.assertEqual(coordinator._session_buttons, {})
+                self.assertEqual(coordinator.ring_count, 1)
+                self.assertTrue(all("button=None" in message for message in logs.output))
+
+    async def test_plain_numeric_info_is_trimmed_and_range_checked(self) -> None:
+        for info, expected in ((" 12 ", 12), ("001", 1), ("54", 54), ("150", 150)):
+            with self.subTest(info=info):
+                coordinator = self._make_coordinator()
+                coordinator._process_log_event({
+                    "event": "CallSessionStateChanged",
+                    "params": {
+                        "state": "ringing", "session": 42,
+                        "originator": "button", "info": info,
+                    },
+                })
+                self.assertEqual(coordinator.last_ring_button, expected)
+
+    async def test_only_button_session_events_store_info(self) -> None:
+        for originator in ("incoming", "keypad", "display", "api", None):
+            with self.subTest(originator=originator):
+                coordinator = self._make_coordinator()
+                for event_name, signal in (
+                    ("CallSessionStateChanged", {"originator": originator}),
+                    ("CallStateChanged", {
+                        "direction": "incoming" if originator == "incoming" else "outgoing",
+                    }),
+                ):
+                    coordinator._process_log_event({
+                        "event": event_name,
+                        "params": {"state": "ringing", "session": 42, "info": "2", **signal},
+                    })
+                self.assertEqual(coordinator._session_buttons, {})
+                self.assertIsNone(coordinator.last_ring_button)
+                self.assertEqual(coordinator.ring_count, int(originator != "incoming"))
+
+    async def test_sessionless_info_is_not_stored(self) -> None:
+        coordinator = self._make_coordinator()
+        coordinator._process_log_event({
+            "event": "CallSessionStateChanged",
+            "params": {"state": "ringing", "originator": "button", "info": "2"},
+        })
+        self.assertEqual(coordinator.ring_count, 1)
+        self.assertIsNone(coordinator.last_ring_button)
+        self.assertEqual(coordinator._session_buttons, {})
+
+    async def test_next_press_without_info_clears_previous_button(self) -> None:
+        for second_session in (32, 33):
+            with self.subTest(second_session=second_session):
+                coordinator = self._make_coordinator()
+                for event in _button_press_sequence("2"):
+                    coordinator._process_log_event(event)
+                self.assertEqual(coordinator.last_ring_button, 2)
+                for event in _button_press_sequence(session=second_session):
+                    coordinator._process_log_event(event)
+                self.assertEqual(coordinator.ring_count, 2)
+                self.assertIsNone(coordinator.last_ring_button)
+                self.assertEqual(coordinator._session_buttons, {})
+
+    async def test_concurrent_sessions_keep_their_own_buttons(self) -> None:
+        coordinator = self._make_coordinator()
+        for session, info in ((42, "2"), (43, "12")):
+            coordinator._process_log_event({
+                "event": "CallSessionStateChanged",
+                "params": {
+                    "state": "initialized", "session": session,
+                    "originator": "button", "info": info,
+                },
+            })
+        self.assertEqual(coordinator._session_buttons, {"42": 2, "43": 12})
+        for count, (session, button) in enumerate(((42, 2), (43, 12)), start=1):
+            coordinator._process_log_event({
+                "event": "CallStateChanged",
+                "params": {"state": "ringing", "session": session, "direction": "outgoing"},
+            })
+            self.assertEqual(coordinator.last_ring_button, button)
+            self.assertEqual(coordinator.ring_count, count)
+            coordinator._process_log_event({
+                "event": "CallStateChanged",
+                "params": {"state": "connected", "session": session, "direction": "outgoing"},
+            })
+            self.assertEqual(coordinator._session_buttons, {"42": 2, "43": 12})
+        for session in (42, 43):
+            coordinator._process_log_event({
+                "event": "CallSessionStateChanged",
+                "params": {"state": "terminated", "session": session},
+            })
+            self.assertNotIn(str(session), coordinator._session_buttons)
+            if session == 42:
+                self.assertEqual(coordinator._session_buttons, {"43": 12})
+        self.assertEqual(coordinator._session_buttons, {})
+
+    async def test_terminal_session_state_removes_button_not_individual_call_end(self) -> None:
+        for terminal in self.coordinator_module.TwoNIntercomCoordinator._TERMINAL_CALL_STATES:
+            for sessionless in (False, True):
+                with self.subTest(terminal=terminal, sessionless=sessionless):
+                    coordinator = self._make_coordinator()
+                    coordinator._process_log_event({
+                        "event": "CallSessionStateChanged",
+                        "params": {
+                            "state": "initialized", "session": 42,
+                            "originator": "button", "info": "2",
+                        },
+                    })
+                    params = {"state": terminal}
+                    if not sessionless:
+                        params["session"] = 42
+                    coordinator._process_log_event({
+                        "event": "CallStateChanged", "params": params,
+                    })
+                    self.assertEqual(coordinator._session_buttons, {"42": 2})
+                    coordinator._process_log_event({
+                        "event": "CallSessionStateChanged",
+                        "params": {**params, "originator": "button", "info": "2"},
+                    })
+                    self.assertEqual(coordinator._session_buttons, {})
+
+
 class CallRingDetectionTests(unittest.IsolatedAsyncioTestCase):
     """Only calls started by the intercom generate a doorbell ring."""
 

@@ -180,15 +180,30 @@ Detaily endpointů: [`API_REFERENCE.md`](API_REFERENCE.md).
   `CallSessionStateChanged` rings only with a non-empty `originator` other
   than `incoming` (for example, `button`). A missing originator is not a
   ring signal. Calls into the intercom never trigger the doorbell.
+- Optional button metadata is independent of ring detection:
+  `CallSessionStateChanged` with `originator=button` stores a plain numeric
+  `info` string (1-3 digits after trimming, value 1..150) in
+  `_session_buttons`, keyed by the explicit session ID. Missing or invalid
+  values are ignored. When a new ring is counted, `last_ring_button` is set
+  from that same session, or to `None` if unknown. An earlier `initialized`
+  event therefore supplies the button even if `CallStateChanged` rings first.
+  A terminal session state removes the stored button, including when the
+  terminal event resolves to the last observed session; an individual call
+  ending does not remove it. Each new ring replaces the previous ring's
+  button, so unknown metadata never inherits an earlier press's number.
+  Only button 1 has been verified on real hardware (fw 3.x); other buttons
+  and the presence of this metadata on older firmware remain unverified.
 - The opt-in `ring_on_keypress` option (off by default, in `entry.options`)
   subscribes to `KeyPressed` only when `/api/log/caps` lists it. Call-button
   keys `%1` through `%54` use the same ring counter and optional snapshot
   as call events, so the doorbell event fires without a poll even if no
   call follows. Keypad digits, `*` and `#` never ring; no key values are logged.
-  A press has no peer, bypasses `called_id`, and clears the previous
-  `called_peer`. If it arrives first, the event can have no `called_peer`
+  A press supplies `last_ring_button` from `%n`, has no peer, bypasses
+  `called_id`, and clears the previous `called_peer`.
+  If it arrives first, the event can have no `called_peer`
   even when the press starts a call. The shared ring guard prevents a second
-  ring/snapshot in either event order, including intervening
+  ring/snapshot in either event order and keeps the button of the counted
+  ring unchanged, including intervening
   `initialized`/`connecting` events. A press-only guard clears after
   `KEYPRESS_RING_HOLD = 3 s`; a call that takes over is cleared by call state.
   Unloading cancels the pending timer.
@@ -207,7 +222,8 @@ Detaily endpointů: [`API_REFERENCE.md`](API_REFERENCE.md).
   The part after `/` in Called ID is ignored when matching peers, so
   `1234567890/2` matches `1234567890`.
 - Every call event is logged at DEBUG with the event name, state,
-  direction/originator, session, sorted canonical session peers, configured
+  direction/originator, session, optional stored button number, sorted canonical
+  session peers, configured
   canonical filter (`all` for All calls) and the decision
   (`rang`, `filtered by peer`, `not a ring`). Raw payloads and credential-bearing
   peer URLs are not logged.
@@ -216,7 +232,8 @@ Detaily endpointů: [`API_REFERENCE.md`](API_REFERENCE.md).
 - `ring_count` increases only when a new allowed ring starts, using the same
   guard that deduplicates ring snapshots for the two call event types.
   `event.<intercom>_doorbell` watches this counter and emits `ring` with the
-  existing called-peer and caller name/number metadata. It baselines the
+  existing called-peer and caller name/number metadata and the integer
+  `button` attribute only when `last_ring_button` is known. It baselines the
   counter when added, so startup/restore and polling do not create rings.
   The event shares the camera's device for HomeKit's automatic doorbell link
   and is the only doorbell entity. Its unique ID remains
