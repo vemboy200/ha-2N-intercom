@@ -1453,8 +1453,8 @@ class IntegrationSetupTests(unittest.IsolatedAsyncioTestCase):
         result = await init_module.async_setup_entry(hass, entry)
         self.assertTrue(result)
 
-    async def test_async_update_options_reloads_entry(self) -> None:
-        """async_update_options should trigger a reload."""
+    async def test_setup_registers_no_update_listener(self) -> None:
+        """Config flows own reloads; setup must not register another listener."""
         init_module = self.init_module
         ha_const = sys.modules["homeassistant.const"]
 
@@ -1465,8 +1465,20 @@ class IntegrationSetupTests(unittest.IsolatedAsyncioTestCase):
             ha_const.CONF_PASSWORD: "secret",
         })
         hass = FakeHass([entry])
-        # Should not raise
-        await init_module.async_update_options(hass, entry)
+        with (
+            patch.object(init_module, "TwoNIntercomAPI", FakeAPI),
+            patch.object(
+                entry, "add_update_listener", wraps=entry.add_update_listener
+            ) as add_listener,
+            patch.object(hass.config_entries, "async_reload", new=AsyncMock()) as reload,
+        ):
+            self.assertTrue(await init_module.async_setup_entry(hass, entry))
+            try:
+                add_listener.assert_not_called()
+                self.assertIsNone(entry._update_listener)
+                reload.assert_not_awaited()
+            finally:
+                await init_module.async_unload_entry(hass, entry)
 
 
 class GrantAccessFakeAPI(FakeAPI):

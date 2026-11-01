@@ -140,6 +140,15 @@ def _install_homeassistant_stubs() -> None:
         def async_abort(self, *, reason):
             return _FormResult(type="abort", reason=reason)
 
+        def async_update_reload_and_abort(
+            self, entry, *, data=None, options=None, reason
+        ):
+            self.hass.config_entries.async_update_entry(
+                entry, data=data, options=options
+            )
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
+            return self.async_abort(reason=reason)
+
         def async_create_entry(self, *, title, data):
             return _FormResult(type="create_entry", title=title, data=data)
 
@@ -154,8 +163,12 @@ def _install_homeassistant_stubs() -> None:
     class OptionsFlow(_BaseFlow):
         config_entry = None
 
+    class OptionsFlowWithReload(OptionsFlow):
+        pass
+
     config_entries.ConfigFlow = ConfigFlow
     config_entries.OptionsFlow = OptionsFlow
+    config_entries.OptionsFlowWithReload = OptionsFlowWithReload
     config_entries.ConfigEntry = object
     config_entries.ConfigFlowResult = dict
     sys.modules["homeassistant.config_entries"] = config_entries
@@ -313,13 +326,17 @@ FakeAPI.system_info = {"serialNumber": "SN-123456", "macAddr": "00:11:22:33:44:5
 
 
 class FakeConfigEntry:
-    def __init__(self, entry_id, data, options=None, domain="2n_intercom") -> None:
+    def __init__(
+        self, entry_id, data, options=None, domain="2n_intercom", state="loaded"
+    ) -> None:
         self.entry_id = entry_id
         self.data = data
         self.options = options or {}
         self.domain = domain
         self.title = data.get("name", "Front door")
         self.unique_id = None
+        self.state = state
+        self.runtime_data = None
 
 
 class FakeConfigEntries:
@@ -327,6 +344,7 @@ class FakeConfigEntries:
         self._entries = {entry.entry_id: entry for entry in entries}
         self.update_calls: list[tuple[str, dict]] = []
         self.reload_calls: list[str] = []
+        self.scheduled_reload_calls: list[str] = []
 
     def async_get_entry(self, entry_id):
         return self._entries.get(entry_id)
@@ -345,6 +363,10 @@ class FakeConfigEntries:
         self.update_calls.append((entry.entry_id, dict(entry.data)))
 
     async def async_reload(self, entry_id):
+        self.reload_calls.append(entry_id)
+
+    def async_schedule_reload(self, entry_id):
+        self.scheduled_reload_calls.append(entry_id)
         self.reload_calls.append(entry_id)
 
 
@@ -691,6 +713,7 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
                 "password": "old-secret",
                 "verify_ssl": False,
             },
+            options={"scan_interval": 120, "allow_insecure": True},
         )
         hass = FakeHass([entry])
         flow = self._make_flow(hass)
@@ -709,8 +732,15 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
 
         # Submit valid creds → entry is updated, reload kicked off, aborted
         # with reauth_successful.
-        result = await flow.async_step_reauth_confirm(
-            {"username": "homeassistant", "password": "new-secret"}
+        with patch.object(
+            flow, "async_update_reload_and_abort",
+            wraps=flow.async_update_reload_and_abort,
+        ) as update_reload:
+            result = await flow.async_step_reauth_confirm(
+                {"username": "homeassistant", "password": "new-secret"}
+            )
+        update_reload.assert_called_once_with(
+            entry, data=entry.data, reason="reauth_successful"
         )
         self.assertEqual(result["type"], "abort")
         self.assertEqual(result["reason"], "reauth_successful")
@@ -731,6 +761,46 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertEqual(hass.config_entries.reload_calls, ["entry-1"])
+        self.assertEqual(hass.config_entries.scheduled_reload_calls, ["entry-1"])
+        self.assertEqual(entry.options, {"scan_interval": 120, "allow_insecure": True})
+
+    async def test_reauth_reloads_entry_after_auth_failed_setup(self) -> None:
+        entry = FakeConfigEntry(
+            "entry-1",
+            {
+                "host": "192.0.2.20", "port": 443, "protocol": "https",
+                "username": "user", "password": "old", "verify_ssl": True,
+                "mac_address": "001122AABBCC", "serial_number": "SN-123456",
+            },
+            options={"scan_interval": 120},
+            state="setup_error",
+        )
+        original_data = dict(entry.data)
+        hass = FakeHass([entry])
+        flow = self._make_flow(hass)
+        flow.context = {"entry_id": entry.entry_id, "source": "reauth"}
+        self.assertEqual(entry.state, "setup_error")
+        self.assertIsNone(entry.runtime_data)
+
+        await flow.async_step_reauth(entry.data)
+        with patch.object(
+            flow, "async_update_reload_and_abort",
+            wraps=flow.async_update_reload_and_abort,
+        ) as update_reload:
+            result = await flow.async_step_reauth_confirm(
+                {"username": "new-user", "password": "new"}
+            )
+
+        expected_data = {**original_data, "username": "new-user", "password": "new"}
+        update_reload.assert_called_once_with(
+            entry, data=expected_data, reason="reauth_successful"
+        )
+        self.assertEqual(result, {"type": "abort", "reason": "reauth_successful"})
+        self.assertEqual(entry.data, expected_data)
+        self.assertEqual(entry.options, {"scan_interval": 120})
+        self.assertEqual(hass.config_entries.update_calls, [(entry.entry_id, expected_data)])
+        self.assertEqual(hass.config_entries.reload_calls, [entry.entry_id])
+        self.assertEqual(hass.config_entries.scheduled_reload_calls, [entry.entry_id])
 
     async def test_reauth_confirm_with_bad_credentials_shows_invalid_auth(
         self,
@@ -774,7 +844,9 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
                 "password": "secret",
                 "verify_ssl": False,
             },
+            options={"scan_interval": 120, "allow_insecure": True},
         )
+        original_data = dict(entry.data)
         hass = FakeHass([entry])
         flow = self._make_flow(hass)
         flow.context = {"entry_id": entry.entry_id}
@@ -785,23 +857,44 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["step_id"], "reconfigure")
 
         # Submit a changed host; flow validates and updates the entry.
-        result = await flow.async_step_reconfigure(
-            {
-                "host": "192.0.2.21",
-                "port": 443,
-                "protocol": "https",
-                "username": "homeassistant",
-                "password": "secret",
-                "verify_ssl": False,
-            }
+        expected_data = {**original_data, "host": "192.0.2.21"}
+        expected_options = {"scan_interval": 120, "allow_insecure": True}
+        with patch.object(
+            flow, "async_update_reload_and_abort",
+            wraps=flow.async_update_reload_and_abort,
+        ) as update_reload:
+            result = await flow.async_step_reconfigure(dict(expected_data))
+        update_reload.assert_called_once_with(
+            entry, data=expected_data, options=expected_options,
+            reason="reconfigure_successful",
         )
         self.assertEqual(result["type"], "abort")
         self.assertEqual(result["reason"], "reconfigure_successful")
-        self.assertEqual(len(hass.config_entries.update_calls), 1)
-        updated_entry_id, updated_data = hass.config_entries.update_calls[0]
-        self.assertEqual(updated_entry_id, "entry-1")
-        self.assertEqual(updated_data["host"], "192.0.2.21")
+        self.assertEqual(hass.config_entries.update_calls, [(entry.entry_id, expected_data)])
+        self.assertEqual(entry.data, expected_data)
+        self.assertEqual(entry.options, expected_options)
         self.assertEqual(hass.config_entries.reload_calls, ["entry-1"])
+        self.assertEqual(hass.config_entries.scheduled_reload_calls, ["entry-1"])
+
+    async def test_reconfigure_unchanged_values_reloads_once(self) -> None:
+        entry = FakeConfigEntry(
+            "entry-1",
+            {
+                "host": "192.0.2.20", "port": 443, "protocol": "https",
+                "username": "user", "password": "secret", "verify_ssl": True,
+            },
+            options={"scan_interval": 120, "allow_insecure": False},
+        )
+        original_data = dict(entry.data)
+        original_options = dict(entry.options)
+        hass = FakeHass([entry])
+        flow = self._make_flow(hass)
+        flow.context = {"entry_id": entry.entry_id}
+        result = await flow.async_step_reconfigure(dict(original_data))
+        self.assertEqual(result, {"type": "abort", "reason": "reconfigure_successful"})
+        self.assertEqual(entry.data, original_data)
+        self.assertEqual(entry.options, original_options)
+        self.assertEqual(hass.config_entries.reload_calls, [entry.entry_id])
 
     async def test_reconfigure_with_failed_connection_does_not_update(
         self,
@@ -849,18 +942,39 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         flow = self._make_flow(FakeHass([entry]))
         flow.context = {"entry_id": entry.entry_id}
+        original_data = dict(entry.data)
 
         for allow_insecure in (True, False):
             with self.subTest(allow_insecure=allow_insecure):
-                result = await flow.async_step_reconfigure(
-                    {**entry.data, "allow_insecure": allow_insecure}
+                flow.hass.config_entries.update_calls.clear()
+                flow.hass.config_entries.reload_calls.clear()
+                flow.hass.config_entries.scheduled_reload_calls.clear()
+                with patch.object(
+                    flow, "async_update_reload_and_abort",
+                    wraps=flow.async_update_reload_and_abort,
+                ) as update_reload:
+                    result = await flow.async_step_reconfigure(
+                        {**entry.data, "allow_insecure": allow_insecure}
+                    )
+                update_reload.assert_called_once_with(
+                    entry, data=original_data,
+                    options={"scan_interval": 120, "allow_insecure": allow_insecure},
+                    reason="reconfigure_successful",
                 )
                 self.assertEqual(result["reason"], "reconfigure_successful")
                 self.assertEqual(FakeAPI.instances[-1].allow_insecure, allow_insecure)
                 self.assertNotIn("allow_insecure", entry.data)
+                self.assertEqual(entry.data, original_data)
                 self.assertEqual(entry.options, {
                     "scan_interval": 120, "allow_insecure": allow_insecure,
                 })
+                self.assertEqual(flow.hass.config_entries.update_calls, [
+                    (entry.entry_id, original_data),
+                ])
+                self.assertEqual(flow.hass.config_entries.reload_calls, [entry.entry_id])
+                self.assertEqual(
+                    flow.hass.config_entries.scheduled_reload_calls, [entry.entry_id]
+                )
                 form = await flow.async_step_reconfigure(None)
                 defaults = {
                     key.key: key.default for key in form["data_schema"].schema
@@ -1060,6 +1174,14 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
         await flow.async_step_reauth(entry.data)
         # The flow's _data should come from entry.data, not merged with options
         self.assertEqual(flow._data["host"], "192.0.2.20")
+        result = await flow.async_step_reauth_confirm(
+            {"username": "homeassistant", "password": "new"}
+        )
+        self.assertEqual(result["reason"], "reauth_successful")
+        self.assertEqual(entry.data["host"], "192.0.2.20")
+        self.assertEqual(entry.data["password"], "new")
+        self.assertEqual(entry.options, {"host": "stale-option-host"})
+        self.assertEqual(hass.config_entries.reload_calls, [entry.entry_id])
 
     # --- Duplicate detection tests ---
 
@@ -1342,11 +1464,11 @@ class ConfigFlowTests(unittest.IsolatedAsyncioTestCase):
             result = await flow.async_step_ssdp(
                 self._make_ssdp_info(mac="7c-1e-b3-00-00-00", host="192.0.2.60")
             )
-        await asyncio.sleep(0)  # let the scheduled reload task run
         self.assertEqual(result["type"], "abort")
         self.assertEqual(result["reason"], "already_configured")
         self.assertEqual(entry.data["host"], "192.0.2.60")
         self.assertEqual(hass.config_entries.reload_calls, [entry.entry_id])
+        self.assertEqual(hass.config_entries.scheduled_reload_calls, [entry.entry_id])
         self.assertEqual(hass.config_entries.update_calls, [
             (entry.entry_id, {**old_data, "host": "192.0.2.60"}),
         ])
@@ -1648,6 +1770,12 @@ class OptionsFlowTests(unittest.IsolatedAsyncioTestCase):
         flow.config_entry = entry
         flow.hass = hass or FakeHass([entry])
         return flow
+
+    def test_options_flow_uses_reload_base_class(self) -> None:
+        self.assertTrue(issubclass(
+            self.config_flow_module.TwoNIntercomOptionsFlow,
+            sys.modules["homeassistant.config_entries"].OptionsFlowWithReload,
+        ))
 
     async def test_init_redirects_to_device_step(self) -> None:
         entry = FakeConfigEntry(

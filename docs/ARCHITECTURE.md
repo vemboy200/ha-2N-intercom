@@ -19,7 +19,7 @@ Diagramy (otevři v [excalidraw.com](https://excalidraw.com) nebo VS Code rozš�
 | Soubor | Role |
 |---|---|
 | `__init__.py` | Životní cyklus config entry (`async_setup_entry` / `async_unload_entry`), registrace služeb `answer_call` / `hangup_call`, vytvoření HA `aiohttp` session s Digest middleware, start/stop log-listeneru. |
-| `config_flow.py` | `ConfigFlow` (user / reauth / reconfigure) a `OptionsFlow` (chování: polling, kamera, relé). Auto-detekce protokolu/portu. |
+| `config_flow.py` | `ConfigFlow` (user / reauth / reconfigure) a `OptionsFlowWithReload` (chování: polling, kamera, relé). Auto-detekce protokolu/portu. |
 | `coordinator.py` | `TwoNIntercomCoordinator` (rozšiřuje `DataUpdateCoordinator`). Drží cache stavů, zpracovává log-události, řídí ring/motion detekci, background long-poll task. |
 | `api.py` | `TwoNIntercomAPI` – bezstavový HTTP klient. Parsování chyb 2N, kamera caps/transport, RTSP digest probe, řízení relé, snapshot. |
 | `entity.py` | Sdílená základní entita (`device_info`, `available`, `has_entity_name`). |
@@ -88,6 +88,12 @@ without changing coordinator availability or the log listener.
 
 Toto oddělení zajišťuje, že options flow nikdy nepřepíše úspěšný reauth.
 
+Config entries register no update listener. Options changes reload through
+`OptionsFlowWithReload`; reauth and reconfigure use `async_update_reload_and_abort`
+with the integration's success reasons. Each action requests one reload, including
+reauth after an authentication-related setup failure. The setup-time MAC backfill
+only updates entry data and does not request a reload.
+
 ### SSDP discovery and address updates
 
 The manifest matches SSDP manufacturer `2N, part of Axis group`, including
@@ -101,7 +107,8 @@ coordinator's cached `macAddr` during setup, without an extra API request.
 A matching announcement on a new host first queries `/api/system/info` using
 the saved credentials, protocol, port and TLS verification setting. The normalized
 API MAC must match the stored MAC; serial-based unique IDs also require the API
-serial to match. Only then is the host updated in place and a reload scheduled;
+serial to match. Only then is the host updated in place and one reload requested
+through `hass.config_entries.async_schedule_reload`;
 an unchanged host does neither and makes no verification request.
 
 The temporary client permits Basic fallback only over verified HTTPS, independently

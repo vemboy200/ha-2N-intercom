@@ -3,11 +3,11 @@ id: TASK-76
 title: >-
   Reload the entry once per config change and build DeviceInfo in one
   constructor call
-status: To Do
+status: In Progress
 assignee:
   - '@copilot'
 created_date: '2026-10-31T10:28:00Z'
-updated_date: '2026-10-31T10:29:00Z'
+updated_date: '2026-11-01 18:47'
 labels:
   - ha-compat
   - config-flow
@@ -23,8 +23,8 @@ references:
   - tests/test_coordinator.py
   - >-
     https://contributors.home-assistant.io/blog/2026/05/07/config-entry-listener-together-with-reloading-methods/
-  - https://contributors.home-assistant.io/blog/2026/10/13/device-info-class/
-  - https://github.com/home-assistant/core/pull/169198
+  - 'https://contributors.home-assistant.io/blog/2026/10/13/device-info-class/'
+  - 'https://github.com/home-assistant/core/pull/169198'
 priority: medium
 type: enhancement
 ordinal: 82000
@@ -68,22 +68,28 @@ Reauth/reconfigure cannot be exercised by E2E (it does not change real credentia
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. `__init__.py`: delete `entry.async_on_unload(entry.add_update_listener(async_update_options))` (`:586`) and `async_update_options` (`:590-594`); replace `tests/test_init.py::test_async_update_options_reloads_entry` with a test that setup registers no update listener. Keep the MAC backfill `async_update_entry` at `:548` (runs during setup, no reload wanted).
-2. `config_flow.py`:
-   - `class TwoNIntercomOptionsFlow(config_entries.OptionsFlowWithReload)`; `_async_create_entry` unchanged.
-   - reauth (`:640-647`): `return self.async_update_reload_and_abort(self._reauth_entry, data=merged, reason="reauth_successful")`.
-   - reconfigure (`:733-746`): `return self.async_update_reload_and_abort(self._reconfigure_entry, data=merged, options={**self._reconfigure_entry.options, CONF_ALLOW_INSECURE: allow_insecure}, reason="reconfigure_successful")`.
-   - SSDP (`:492-497`): keep `async_update_entry`, replace `self.hass.async_create_task(self.hass.config_entries.async_reload(...))` with `self.hass.config_entries.async_schedule_reload(entry.entry_id)`.
-   - Pass `reason=` explicitly so the integration's own strings (`strings.json:76-77`) keep being used; no translation change.
-3. `coordinator.py` `get_device_info`: collect the optional fields (configuration_url, serial_number, hw_version, connections) in a local `kwargs` dict only when present, then `return _DeviceInfo(identifiers=..., name=..., manufacturer="2N", model=..., sw_version=..., **kwargs)`. Do not read DeviceInfo fields with `.get()`.
-4. Unit-test stubs (`tests/test_config_flow.py` `_BaseFlow` / `FakeConfigEntries`, `tests/test_coordinator.py` DeviceInfo stub, `tests/test_init.py` fakes): add `OptionsFlowWithReload`, `async_update_reload_and_abort` (updates the entry and records one reload, also for a not-loaded entry) and `async_schedule_reload` as needed. Do not import real HA in unit tests.
-5. Docs: update `docs/ARCHITECTURE.md` only if it describes the update listener / reload path. No README or CHANGELOG change (release task only).
-
-Must not change: config split (`entry.data` = identity, `entry.options` = behaviour; reauth must not merge options, see `test_reauth_does_not_merge_options`); the `allow_insecure` handling in reconfigure/reauth; SSDP identity verification (TASK-68); dual auth in `api.py`; entity unique_ids and device identifiers.
+1. Remove the config-entry update listener and async_update_options from __init__.py; retain the setup-time MAC backfill without reloading and assert setup registers no update listener.
+2. Use OptionsFlowWithReload for options, async_update_reload_and_abort with explicit existing success reasons for reauth/reconfigure, and async_schedule_reload after the verified SSDP host update. Preserve identity/behaviour separation, allow_insecure handling, SSDP verification/logging, dual auth and identifiers.
+3. Gather present optional device fields in local kwargs and construct DeviceInfo once, preserving TypedDict and dataclass compatibility.
+4. Extend lightweight HA stubs and focused tests for single reloads, updated data/options, reauth of an unloaded entry, and constructor-only DeviceInfo creation; keep existing E2E coverage unchanged. Update architecture documentation only if it describes the changed reload path.
+5. Run all required Python 3.12+ local gates, record implementation/evidence notes without checking acceptance criteria or finalizing status, and commit locally on the current TASK-76 branch. Do not run E2E or push.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Approved by Jan in Telegram, 2026-10-27 (grooming 2026-10-27, alternative B; milestone v1.6.0 confirmed by Jan). Spec by Steve.
+
+Implemented the approved HA compatibility changes without touching protected paths or release metadata. Removed the entry update listener and async_update_options; setup-time MAC backfill remains unchanged. Options use OptionsFlowWithReload, reauth/reconfigure return async_update_reload_and_abort with explicit integration success reasons, and verified SSDP host changes request async_schedule_reload once. Data/options separation, allow_insecure handling, SSDP identity checks/logging, dual auth and identifiers are preserved. DeviceInfo now receives all present fields in one constructor call. Updated the existing architecture reload-path documentation and the camera-options docstring.
+
+Local evidence (Python 3.12.15): python3 -m unittest discover -s tests -t tests passed all 796 tests; python3 validate.py passed; python3 -m py_compile custom_components/2n_intercom/*.py passed; git diff --check passed.
+AC #1 evidence: test_setup_registers_no_update_listener asserts setup never calls add_update_listener and requests no reload; integration source contains neither add_update_listener nor async_update_options.
+AC #2 evidence: test_options_flow_uses_reload_base_class asserts OptionsFlowWithReload inheritance.
+AC #3 evidence: test_reauth_confirm_with_valid_credentials_updates_and_aborts spies on the HA helper and asserts one update, one scheduled reload, exact credential data, preserved options and reauth_successful. test_reauth_does_not_merge_options now also exercises successful reauth.
+AC #4 evidence: adapted test_reconfigure_with_valid_credentials_updates_and_aborts and test_reconfigure_stores_and_forwards_insecure_opt_in assert one helper invocation/reload and exact data/options. test_reconfigure_unchanged_values_reloads_once covers unchanged values.
+AC #5 evidence: test_ssdp_updates_host_for_already_configured_device asserts one scheduled reload and preserved data/options/identity/logging; existing concurrent-announcement and failed-verification tests passed.
+AC #6 evidence: test_reauth_reloads_entry_after_auth_failed_setup uses a setup_error entry with no runtime data and asserts updated credentials plus one helper invocation and scheduled reload.
+AC #7 evidence: existing DeviceInfoTests passed; test_device_info_constructs_all_fields_once_for_both_ha_shapes checks exact constructor kwargs for dict and immutable dataclass stubs, including optional-field omission/UNDEFINED defaults. No info[...] writes remain in custom_components.
+AC #8 pending: existing test_00_setup, test_20_lifecycle::test_reload_entry, test_40_options_flow and test_firmware coverage is unchanged; no E2E/network-device commands were run on the VM. The orchestrator must obtain e2e-pi evidence.
+AC #9 and AC #10 remain manual post-merge staging checks for the tester and Jan. Acceptance criteria remain unchecked and status remains In Progress for orchestrator finalization.
 <!-- SECTION:NOTES:END -->

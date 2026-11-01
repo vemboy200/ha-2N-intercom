@@ -583,15 +583,7 @@ async def async_setup_entry(
     # _get_platforms() output (e.g. adding gate-type relays adds cover).
     entry.runtime_data.loaded_platforms = list(platforms)
 
-    entry.async_on_unload(entry.add_update_listener(async_update_options))
     return True
-
-
-async def async_update_options(
-    hass: HomeAssistant, entry: TwoNIntercomConfigEntry
-) -> None:
-    """Update options."""
-    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(
