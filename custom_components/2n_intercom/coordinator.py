@@ -1733,25 +1733,26 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
         model = system_info.get("variant") or system_info.get("deviceName") or "IP Intercom"
         sw_version = system_info.get("swVersion") or "1.0.0"
 
-        info = _DeviceInfo(
+        kwargs: dict[str, Any] = {}
+        if self.config_entry is not None:
+            kwargs["configuration_url"] = device_web_url(self.config_entry.data)
+        serial = system_info.get("serialNumber")
+        if serial:
+            kwargs["serial_number"] = str(serial)
+        hw_version = system_info.get("hwVersion")
+        if hw_version:
+            kwargs["hw_version"] = str(hw_version)
+        mac = system_info.get("macAddr")
+        if mac:
+            kwargs["connections"] = {(_MAC, str(mac))}
+        return _DeviceInfo(
             identifiers={(DOMAIN, entry_id)},
             name=name,
             manufacturer="2N",
             model=model,
             sw_version=sw_version,
+            **kwargs,
         )
-        if self.config_entry is not None:
-            info["configuration_url"] = device_web_url(self.config_entry.data)
-        serial = system_info.get("serialNumber")
-        if serial:
-            info["serial_number"] = str(serial)
-        hw_version = system_info.get("hwVersion")
-        if hw_version:
-            info["hw_version"] = str(hw_version)
-        mac = system_info.get("macAddr")
-        if mac:
-            info["connections"] = {(_MAC, str(mac))}
-        return info
 
     async def async_set_io_output(self, port: str, on: bool) -> bool:
         """Set an IO output and refresh its device-confirmed state."""

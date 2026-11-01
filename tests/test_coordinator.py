@@ -6,6 +6,7 @@ import asyncio
 import sys
 import types
 import unittest
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -19,6 +20,23 @@ from _stubs import (
     install_issue_registry_stub,
     load_module,
 )
+
+_UNDEFINED = object()
+
+
+@dataclass(kw_only=True, frozen=True, slots=True)
+class _DataclassDeviceInfo:
+    """DeviceInfo without the transitional dict-style compatibility layer."""
+
+    identifiers: set[tuple[str, str]]
+    name: str
+    manufacturer: str
+    model: str
+    sw_version: str
+    configuration_url: object = _UNDEFINED
+    serial_number: object = _UNDEFINED
+    hw_version: object = _UNDEFINED
+    connections: object = _UNDEFINED
 
 
 def _install_homeassistant_stubs() -> None:
@@ -2682,6 +2700,60 @@ class DeviceInfoTests(unittest.TestCase):
         self.assertNotIn("serial_number", info)
         self.assertNotIn("hw_version", info)
         self.assertNotIn("connections", info)
+
+    def test_device_info_constructs_all_fields_once_for_both_ha_shapes(self) -> None:
+        registry = sys.modules["homeassistant.helpers.device_registry"]
+        entry = types.SimpleNamespace(data={
+            "host": "example.invalid", "protocol": "https", "port": 8443,
+        })
+        base_fields = {
+            "identifiers": {("2n_intercom", "e1")},
+            "name": "Door",
+            "manufacturer": "2N",
+            "model": "IP Intercom",
+            "sw_version": "1.0.0",
+        }
+        cases = (
+            (None, {}, {}),
+            (entry, {
+                "variant": "IP Verso", "swVersion": "2.50",
+                "serialNumber": "SN123", "hwVersion": "HW1.0",
+                "macAddr": "AA:BB:CC:DD:EE:FF",
+            }, {
+                "model": "IP Verso", "sw_version": "2.50",
+                "configuration_url": "https://example.invalid:8443/",
+                "serial_number": "SN123", "hw_version": "HW1.0",
+                "connections": {("mac", "AA:BB:CC:DD:EE:FF")},
+            }),
+            (None, {
+                "serialNumber": "", "hwVersion": None, "macAddr": "",
+            }, {}),
+        )
+        for device_info_type in (dict, _DataclassDeviceInfo):
+            for config_entry, system_info, extra_fields in cases:
+                with self.subTest(
+                    shape=device_info_type.__name__, system_info=system_info
+                ), patch.object(
+                    registry, "DeviceInfo", wraps=device_info_type
+                ) as constructor:
+                    c = self.coordinator_module.TwoNIntercomCoordinator(
+                        types.SimpleNamespace(), types.SimpleNamespace(),
+                        config_entry=config_entry,
+                    )
+                    c._system_info = system_info
+                    info = c.get_device_info("e1", "Door")
+                    expected_fields = {**base_fields, **extra_fields}
+                    constructor.assert_called_once_with(**expected_fields)
+                    if device_info_type is dict:
+                        self.assertEqual(info, expected_fields)
+                    else:
+                        for field, value in expected_fields.items():
+                            self.assertEqual(getattr(info, field), value)
+                        for field in (
+                            "configuration_url", "serial_number", "hw_version", "connections"
+                        ):
+                            if field not in expected_fields:
+                                self.assertIs(getattr(info, field), _UNDEFINED)
 
 
 class TriggerRelayTests(unittest.IsolatedAsyncioTestCase):

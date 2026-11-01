@@ -492,9 +492,7 @@ class TwoNIntercomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type:
                     self.hass.config_entries.async_update_entry(
                         entry, data={**entry.data, CONF_HOST: host}
                     )
-                    self.hass.async_create_task(
-                        self.hass.config_entries.async_reload(entry.entry_id)
-                    )
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
                 return self.async_abort(reason="already_configured")
 
         # Collapses duplicate in-progress flows if the device announces
@@ -638,13 +636,9 @@ class TwoNIntercomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type:
                     await api.async_close()
 
             if not errors and self._reauth_entry is not None:
-                self.hass.config_entries.async_update_entry(
-                    self._reauth_entry, data=merged
+                return self.async_update_reload_and_abort(
+                    self._reauth_entry, data=merged, reason="reauth_successful"
                 )
-                await self.hass.config_entries.async_reload(
-                    self._reauth_entry.entry_id
-                )
-                return self.async_abort(reason="reauth_successful")
 
         data_schema = vol.Schema(
             {
@@ -731,18 +725,15 @@ class TwoNIntercomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type:
                 allow_insecure = merged.pop(
                     CONF_ALLOW_INSECURE, current_allow_insecure
                 )
-                self.hass.config_entries.async_update_entry(
+                return self.async_update_reload_and_abort(
                     self._reconfigure_entry,
                     data=merged,
                     options={
                         **self._reconfigure_entry.options,
                         CONF_ALLOW_INSECURE: allow_insecure,
                     },
+                    reason="reconfigure_successful",
                 )
-                await self.hass.config_entries.async_reload(
-                    self._reconfigure_entry.entry_id
-                )
-                return self.async_abort(reason="reconfigure_successful")
 
         current = self._data
         default_protocol = current.get(CONF_PROTOCOL, DEFAULT_PROTOCOL)
@@ -823,7 +814,7 @@ class TwoNIntercomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type:
         return TwoNIntercomOptionsFlow(config_entry)
 
 
-class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
+class TwoNIntercomOptionsFlow(config_entries.OptionsFlowWithReload):  # type: ignore[misc]
     """Handle options flow for 2N Intercom.
 
     The options flow manages **behavioral** preferences only: polling
@@ -1087,8 +1078,8 @@ class TwoNIntercomOptionsFlow(config_entries.OptionsFlow):  # type: ignore[misc]
         live-view mode (auto/rtsp/mjpeg/jpeg-only) and MJPEG stream
         resolution/fps. The defaults match the device's high-res preset, so
         leaving every field untouched preserves the previous behavior. The
-        coordinator picks the new values up via ``async_update_options`` →
-        ``async_reload``, no manual restart required.
+        coordinator picks the new values up through ``OptionsFlowWithReload``,
+        no manual restart required.
         """
         errors: dict[str, str] = {}
 
