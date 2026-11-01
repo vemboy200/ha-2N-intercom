@@ -418,7 +418,7 @@ Things to know:
 
 - The dashboard must be opened over **HTTPS**. Browsers only allow microphone access on secure pages, so a plain `http://` URL (including the Companion app's internal URL) will not work.
 - Call setup is fast: in testing, the intercom answered and the audio was bridged within the same second, and audio started in about a second, also through a Cloudflare tunnel. Two-way audio over mobile data worked with SIP Core's default STUN server; some networks may need a TURN server.
-- The call only works while the dashboard is open. If the phone suspends the tab, SIP Core disconnects and calls fail until the page is reloaded, and it cannot ring a locked phone.
+- In the Companion app, SIP Core stays connected while the app is in the background. Browser tabs may disconnect when suspended and need a reload. Ringing a locked phone is not supported.
 - Routing a real button press to Home Assistant means changing the intercom's directory or call settings, which can change how calls reach other systems such as Control4. That is not covered here.
 
 ### IO input sensors
