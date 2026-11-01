@@ -43,6 +43,7 @@ Home Assistant custom integration for 2N IP Intercom systems with camera, doorbe
 ### Access control
 - **`2n_intercom.grant_access`** service — opens an access point through the device's access control on behalf of a directory user (see [Services](#services))
 - **Access-control events** (card, PIN code, mobile key, fingerprint, authenticated/rejected user, access taken/blocked/limited, API access) are subscribed via the log channel — only those the device lists in `/api/log/caps`. The latest event (type, credential, access point, granted/denied, user name resolved from the directory) is kept by the coordinator and shown in diagnostics. Card numbers, PIN codes and mobile-key ids are never stored
+- **Automation event bus** — every accepted access event and every counted ring fires `2n_intercom_event`, with person attribution when known (see [Event bus](#event-bus-2n_intercom_event))
 
 ### Door / Gate / Relay control
 - **Switch** entities for door relays (momentary)
@@ -441,6 +442,101 @@ The service never reports success when the door did not open: a denial (`accessG
 ```
 
 ## Automation Examples
+
+### Event bus: `2n_intercom_event`
+
+Listen in **Developer tools → Events**, or use an event trigger. Each accepted
+access-control log event fires immediately in device order, including all events
+in one pull batch. Each counted ring fires once, even when the doorbell entity is
+disabled. Incoming calls never ring; the Called ID filter and opt-in
+`ring_on_keypress` rules are unchanged. Other telemetry and directory changes do
+not fire this event; security events are not included.
+
+| `type` | Device log event / meaning |
+|---|---|
+| `ring` | A counted ring from `CallStateChanged`, `CallSessionStateChanged`, or opt-in `KeyPressed` |
+| `card_entered` | `CardEntered` |
+| `code_entered` | `CodeEntered` |
+| `mobile_key_entered` | `MobKeyEntered` |
+| `fingerprint_entered` | `FingerEntered` |
+| `user_authenticated` | `UserAuthenticated` |
+| `user_rejected` | `UserRejected` |
+| `access_taken` | `AccessTaken` |
+| `access_blocked` | `AccessBlocked` |
+| `access_limited` | `AccessLimited` |
+| `api_access_requested` | `ApiAccessRequested` |
+
+All access payloads have the same keys; an unknown value is `null`. Ring payloads
+have the four common keys plus only the known doorbell event attributes.
+
+| Payload field | Applies to | Value |
+|---|---|---|
+| `device_id` | All | HA device registry id; `null` before the shared intercom device is registered |
+| `config_entry_id` | All | Integration entry id; use it to distinguish intercoms |
+| `type` | All | One of the types above |
+| `timestamp` | All | ISO 8601 UTC; access events use device `utcTime` (current UTC if invalid/missing), rings use detection time |
+| `credential_type` | Access | `card`, `code`, `mobile_key`, `fingerprint`, `api`, or `null` |
+| `access_point` | Access | Integer access point, or `null` |
+| `direction` | Access | Device direction, normalized to lowercase, or `null` |
+| `granted` | Access | `true`, `false`, or `null` when the event does not indicate an outcome |
+| `reason` | Access | Device rejection reason, or `null` |
+| `state` | Access | `in` / `out` for blocking/limiting, otherwise `null` |
+| `user_uuid` | Access | Lowercase directory UUID, or `null` |
+| `user_name` | Access | Best-effort display name, or `null` |
+| `session` | Access | Device access session as a string, or `null` |
+| `called_peer` | Ring | Called SIP peer, only when known |
+| `button` | Ring | Integer call-button number, only when known |
+| `caller_name`, `caller_number` | Ring | Caller metadata, only when known |
+
+`UserAuthenticated` and `UserRejected` carry the user's `name` in the device
+event. For the other access events, the name comes from the `dir/query` cache
+and can be unknown. Events are never delayed or re-fired when a later directory
+refresh fills in a missing name. Match on the stable `user_uuid`, or use
+`user_authenticated`, which always carries the name on the documented device
+event. `AccessTaken` does not gain user attribution from an earlier session event.
+
+PINs (`code`), card numbers (`uid`), mobile-key ids (`authid`), `reader` and other
+raw parameters are never included. User names and UUIDs are not written to
+integration log lines. **Privacy:** HA's recorder stores these bus events,
+including user names and UUIDs, unless excluded. To avoid that history, add
+`2n_intercom_event` to `recorder.exclude.event_types`; live automation triggers
+still work. Diagnostics expose only the event name, supported types derived from
+the active subscription, and integer counts per fired type since setup.
+
+Person arrives (replace the sample name; add `config_entry_id` or `device_id`
+to `event_data` to restrict this to one intercom):
+
+```yaml
+automation:
+  - alias: "Notify when a person arrives"
+    trigger:
+      - platform: event
+        event_type: 2n_intercom_event
+        event_data:
+          type: user_authenticated
+          user_name: "Example Person"
+    action:
+      - service: persistent_notification.create
+        data:
+          message: "{{ trigger.event.data.user_name }} authenticated at the intercom."
+```
+
+Wrong PIN (the PIN itself is never available):
+
+```yaml
+automation:
+  - alias: "Notify on a rejected PIN"
+    trigger:
+      - platform: event
+        event_type: 2n_intercom_event
+        event_data:
+          type: code_entered
+          granted: false
+    action:
+      - service: persistent_notification.create
+        data:
+          message: "A PIN was rejected at the intercom."
+```
 
 ### Blueprint: Doorbell notification with answer/hangup
 

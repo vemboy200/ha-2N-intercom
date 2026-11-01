@@ -3,6 +3,8 @@
 from datetime import timedelta
 
 DOMAIN = "2n_intercom"
+EVENT_2N_INTERCOM = f"{DOMAIN}_event"
+BUS_EVENT_RING = "ring"
 
 # Configuration keys
 CONF_SERIAL_NUMBER = "serial_number"
@@ -112,6 +114,18 @@ ACCESS_LOG_EVENTS = (
     "AccessLimited",
     "ApiAccessRequested",
 )
+ACCESS_BUS_EVENT_TYPES: dict[str, str] = {
+    "CardEntered": "card_entered",
+    "CodeEntered": "code_entered",
+    "MobKeyEntered": "mobile_key_entered",
+    "FingerEntered": "fingerprint_entered",
+    "UserAuthenticated": "user_authenticated",
+    "UserRejected": "user_rejected",
+    "AccessTaken": "access_taken",
+    "AccessBlocked": "access_blocked",
+    "AccessLimited": "access_limited",
+    "ApiAccessRequested": "api_access_requested",
+}
 # Signals a directory change; used to invalidate the uuid -> name cache.
 DIRECTORY_CHANGED_EVENT = "DirectoryChanged"
 # Optional key press event, subscribed only with ring_on_keypress.

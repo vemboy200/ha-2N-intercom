@@ -22,6 +22,7 @@ from .const import (
     CONF_RTSP_USERNAME,
     CONF_SERIAL_NUMBER,
     DEFAULT_FIRMWARE_CHANNEL,
+    EVENT_2N_INTERCOM,
 )
 from .coordinator import TwoNIntercomRuntimeData
 
@@ -158,6 +159,11 @@ async def async_get_config_entry_diagnostics(
                 if last_access_event is not None
                 else None
             ),
+        },
+        "event_bus": {
+            "event": EVENT_2N_INTERCOM,
+            "types": coordinator.bus_event_types,
+            "fired": coordinator.bus_events_fired,
         },
         "ring_snapshot": {
             "captured": coordinator.ring_snapshot is not None,

@@ -6,9 +6,9 @@ import asyncio
 import sys
 import types
 import unittest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
-from _stubs import ENTITY_PATH, EVENT_PATH, install_event_stubs, load_module
+from _stubs import ENTITY_PATH, EVENT_PATH, EventBus, install_event_stubs, load_module
 from test_coordinator import _UNDEFINED, _button_press_sequence, load_coordinator_module
 
 
@@ -72,7 +72,7 @@ class DoorbellEventTests(unittest.IsolatedAsyncioTestCase):
 
     def _coordinator(self, *, called_id=None, ring_on_keypress=False):
         coordinator = self.coordinator_module.TwoNIntercomCoordinator(
-            types.SimpleNamespace(loop=asyncio.get_running_loop()),
+            types.SimpleNamespace(loop=asyncio.get_running_loop(), bus=EventBus()),
             types.SimpleNamespace(),
             called_id=called_id,
             ring_on_keypress=ring_on_keypress,
@@ -149,6 +149,31 @@ class DoorbellEventTests(unittest.IsolatedAsyncioTestCase):
                 coordinator._publish_event_state()
 
                 entity._trigger_event.assert_called_once_with("ring", {"called_peer": "100"})
+
+    async def test_bus_and_entity_share_ring_attributes_including_button(self) -> None:
+        coordinator = self._coordinator()
+        coordinator.data.caller_info = {
+            "name": "Test Visitor", "number": "100", "password": "not-exposed",
+        }
+        entity = self._entity(coordinator)
+        await entity.async_added_to_hass()
+        with patch.object(
+            coordinator, "ring_event_attributes", wraps=coordinator.ring_event_attributes
+        ) as attributes:
+            for event in _button_press_sequence("2"):
+                coordinator._process_log_event(event)
+                coordinator._publish_event_state()
+            self.assertEqual(attributes.call_count, 2)
+        self.assertEqual(len(coordinator.hass.bus.events), 1)
+        _, payload = coordinator.hass.bus.events[0]
+        extras = {
+            key: value for key, value in payload.items()
+            if key not in {"device_id", "config_entry_id", "type", "timestamp"}
+        }
+        self.assertEqual(extras, {
+            "button": 2, "called_peer": "100", "caller_name": "Test Visitor", "caller_number": "100",
+        })
+        entity._trigger_event.assert_called_once_with("ring", extras)
 
     async def test_keypress_log_pull_fires_event_without_polling(self) -> None:
         coordinator = self._coordinator(ring_on_keypress=True, called_id="200")

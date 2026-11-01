@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import sys
 import types
 import unittest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
+from _stubs import EventBus
 from test_coordinator import load_coordinator_module
 
 BASE_EVENTS = [
@@ -49,6 +51,7 @@ class _Hass:
 
     def __init__(self) -> None:
         self.tasks: list[asyncio.Future] = []
+        self.bus = EventBus()
 
     def async_create_task(self, coro):
         task = asyncio.ensure_future(coro)
@@ -583,6 +586,232 @@ class AccessEventParsingTests(_CoordinatorTestCase):
                 "session",
             },
         )
+
+
+class AccessBusEventTests(_CoordinatorTestCase):
+    TYPES = {
+        "CardEntered": "card_entered",
+        "CodeEntered": "code_entered",
+        "MobKeyEntered": "mobile_key_entered",
+        "FingerEntered": "fingerprint_entered",
+        "UserAuthenticated": "user_authenticated",
+        "UserRejected": "user_rejected",
+        "AccessTaken": "access_taken",
+        "AccessBlocked": "access_blocked",
+        "AccessLimited": "access_limited",
+        "ApiAccessRequested": "api_access_requested",
+    }
+    PAYLOAD_KEYS = {
+        "device_id", "config_entry_id", "type", "timestamp", "credential_type",
+        "access_point", "direction", "granted", "reason", "state", "user_uuid",
+        "user_name", "session",
+    }
+
+    def _event(self, event_name, **params):
+        return {"event": event_name, "utcTime": 1548078453, "params": params}
+
+    async def test_all_access_types_fire_once_with_exact_parsed_payload(self) -> None:
+        const = sys.modules["custom_components.2n_intercom.const"]
+        self.assertEqual(set(const.ACCESS_LOG_EVENTS), set(const.ACCESS_BUS_EVENT_TYPES))
+        self.assertEqual(const.ACCESS_BUS_EVENT_TYPES, self.TYPES)
+        for name, bus_type in self.TYPES.items():
+            with self.subTest(event=name):
+                coordinator, hass, _ = self._make(
+                    config_entry=types.SimpleNamespace(entry_id="entry-1")
+                )
+                params = {
+                    "valid": "false", "ap": "1", "session": 8, "direction": "IN",
+                    "uuid": "USER-1", "state": "in", "type": "finger",
+                    "reason": "invalidCode",
+                }
+                if name in {"UserAuthenticated", "UserRejected"}:
+                    params["name"] = "Test Visitor"
+                coordinator._directory_names = {"user-1": "Cached Visitor"}
+
+                self.assertTrue(coordinator._process_log_event(self._event(name, **params)))
+
+                self.assertEqual(len(hass.bus.events), 1)
+                event_name, payload = hass.bus.events[0]
+                self.assertEqual(event_name, "2n_intercom_event")
+                self.assertEqual(set(payload), self.PAYLOAD_KEYS)
+                expected = coordinator.last_access_event.as_dict()
+                del expected["event_type"]
+                expected.update(device_id=None, config_entry_id="entry-1", type=bus_type)
+                self.assertEqual(payload, expected)
+                timestamp = datetime.fromisoformat(payload["timestamp"])
+                self.assertEqual(
+                    timestamp, datetime(2019, 1, 21, 13, 47, 33, tzinfo=timezone.utc)
+                )
+                self.assertEqual(timestamp.utcoffset().total_seconds(), 0)
+                self.assertEqual(coordinator.bus_events_fired, {bus_type: 1})
+
+    async def test_unknown_access_fields_are_present_as_null(self) -> None:
+        coordinator, hass, _ = self._make()
+        coordinator._process_log_event(self._event("AccessTaken"))
+        payload = hass.bus.events[0][1]
+        self.assertEqual(set(payload), self.PAYLOAD_KEYS)
+        for key in self.PAYLOAD_KEYS - {"type", "timestamp"}:
+            self.assertIsNone(payload[key], key)
+
+    async def test_one_pull_batch_fires_every_event_in_device_order(self) -> None:
+        coordinator, hass, api = self._make()
+        batch = [
+            self._event("CardEntered", valid=True, ap=0, session=1),
+            self._event("UserAuthenticated", ap=0, session=1, name="Test Visitor"),
+            self._event("AccessTaken", ap=0, session=1),
+        ]
+
+        async def pull_and_stop(subscription_id, timeout):
+            coordinator._log_listener_stopped = True
+            return batch
+
+        api.async_pull_log = AsyncMock(side_effect=pull_and_stop)
+        await coordinator._async_run_log_subscription(1)
+
+        self.assertEqual(
+            [data["type"] for _, data in hass.bus.events],
+            ["card_entered", "user_authenticated", "access_taken"],
+        )
+        self.assertEqual(
+            [data["credential_type"] for _, data in hass.bus.events], ["card"] * 3
+        )
+        self.assertEqual(coordinator.data.last_access_event.event_type, "AccessTaken")
+        coordinator.async_update_listeners.assert_called_once()
+
+    async def test_names_use_event_then_directory_without_backfill_refiring(self) -> None:
+        api = _FakeAPI(users=[{"uuid": "USER-1", "name": "Directory Visitor"}])
+        coordinator, hass, _ = self._make(api)
+        coordinator._process_log_event(
+            self._event("CardEntered", valid=True, uuid="USER-1")
+        )
+        self.assertIsNone(hass.bus.events[0][1]["user_name"])
+        await hass.drain()
+        self.assertEqual(coordinator.last_access_event.user_name, "Directory Visitor")
+        self.assertEqual(len(hass.bus.events), 1)
+        self.assertIsNone(hass.bus.events[0][1]["user_name"])
+
+        for name in ("CodeEntered", "MobKeyEntered", "FingerEntered",
+                     "AccessTaken", "AccessBlocked", "AccessLimited", "ApiAccessRequested"):
+            coordinator._process_log_event(
+                self._event(name, valid=True, state="in", uuid="USER-1")
+            )
+            self.assertEqual(hass.bus.events[-1][1]["user_name"], "Directory Visitor")
+        for name in ("UserAuthenticated", "UserRejected"):
+            coordinator._process_log_event(
+                self._event(name, uuid="USER-1", name="Event Visitor")
+            )
+            self.assertEqual(hass.bus.events[-1][1]["user_name"], "Event Visitor")
+
+        coordinator._process_log_event(
+            self._event("CardEntered", valid=True, uuid="UNKNOWN-USER")
+        )
+        await hass.drain()
+        self.assertIsNone(hass.bus.events[-1][1]["user_name"])
+        self.assertEqual(len(hass.bus.events), 11)
+        self.assertEqual(sum(coordinator.bus_events_fired.values()), 11)
+
+    async def test_credentials_and_raw_parameters_never_reach_bus_or_logs(self) -> None:
+        coordinator, hass, _ = self._make()
+        secrets = {
+            "code": "SECRET-PIN", "uid": "SECRET-CARD",
+            "authid": "SECRET-MOBILE", "reader": "SECRET-READER",
+            "extra": "SECRET-RAW",
+        }
+        coordinator._directory_names = {"private-user": "Private Visitor"}
+        with self.assertLogs(self.module._LOGGER, level="DEBUG") as logs:
+            for name in ("CodeEntered", "CardEntered", "MobKeyEntered"):
+                coordinator._process_log_event(
+                    self._event(name, valid=False, uuid="PRIVATE-USER", **secrets)
+                )
+            coordinator._process_log_event(self._event("CardEntered", **secrets))
+        self.assertEqual(len(hass.bus.events), 3)
+        for _, payload in hass.bus.events:
+            for key, value in secrets.items():
+                self.assertNotIn(key, payload)
+                self.assertNotIn(value, repr(payload))
+        for value in (*secrets.values(), "PRIVATE-USER", "private-user", "Private Visitor"):
+            self.assertNotIn(value, "\n".join(logs.output))
+
+    async def test_rejected_events_do_not_fire_or_break_next_event_in_batch(self) -> None:
+        coordinator, hass, api = self._make()
+        rejected = [
+            {"event": "CardEntered", "params": ["malformed"]},
+            self._event("CodeEntered"),
+            self._event("AccessBlocked", state="unknown"),
+            self._event("AccessLimited", state="unknown"),
+        ]
+
+        async def pull_and_stop(subscription_id, timeout):
+            coordinator._log_listener_stopped = True
+            return rejected + [self._event("FingerEntered", valid=True)]
+
+        api.async_pull_log = AsyncMock(side_effect=pull_and_stop)
+        await coordinator._async_run_log_subscription(1)
+        self.assertEqual(
+            [payload["type"] for _, payload in hass.bus.events], ["fingerprint_entered"]
+        )
+        self.assertEqual(coordinator.bus_events_fired, {"fingerprint_entered": 1})
+        self.assertEqual(coordinator.data.last_access_event.event_type, "FingerEntered")
+
+    async def test_non_user_facing_events_never_fire(self) -> None:
+        coordinator, hass, _ = self._make(ring_on_keypress=True)
+        for name, params in (
+            ("MotionDetected", {"state": "in"}),
+            ("SwitchStateChanged", {"switch": 1, "active": True}),
+            ("InputChanged", {"port": "input1", "state": True}),
+            ("OutputChanged", {"port": "output1", "state": True}),
+            ("RegistrationStateChanged", {"account": 1, "state": "registered"}),
+            ("ConfigurationChanged", {}),
+            ("CapabilitiesChanged", {}),
+            ("DeviceState", {"state": "startup"}),
+            ("DirectoryChanged", {}),
+            ("KeyPressed", {"key": "#"}),
+        ):
+            coordinator._process_log_event(self._event(name, **params))
+            self.assertEqual(hass.bus.events, [], name)
+        await hass.drain()
+        self.assertEqual(coordinator.bus_events_fired, {})
+
+    async def test_device_id_retried_until_found_then_cached(self) -> None:
+        coordinator, hass, _ = self._make(
+            config_entry=types.SimpleNamespace(entry_id="entry-1")
+        )
+        registry = sys.modules["homeassistant.helpers.device_registry"].async_get(hass)
+        registry.devices[("2n_intercom", "entry-other")] = types.SimpleNamespace(id="other")
+        with patch.object(registry, "async_get_device", wraps=registry.async_get_device) as lookup:
+            coordinator._process_log_event(self._event("CardEntered", valid=True))
+            self.assertIsNone(hass.bus.events[-1][1]["device_id"])
+            registry.devices[("2n_intercom", "entry-1")] = types.SimpleNamespace(id="device-1")
+            coordinator._process_log_event(self._event("CodeEntered", valid=True))
+            self.assertEqual(hass.bus.events[-1][1]["device_id"], "device-1")
+            registry.devices.clear()
+            coordinator._process_log_event(self._event("FingerEntered", valid=True))
+            self.assertEqual(hass.bus.events[-1][1]["device_id"], "device-1")
+            self.assertEqual(lookup.call_count, 2)
+            lookup.assert_called_with(identifiers={("2n_intercom", "entry-1")})
+        for _, payload in hass.bus.events:
+            self.assertEqual(payload["config_entry_id"], "entry-1")
+
+    async def test_bus_types_follow_subscription_and_counts_are_defensive_copies(self) -> None:
+        coordinator, hass, _ = self._make()
+        self.assertEqual(coordinator.bus_event_types, [])
+        self.assertEqual(coordinator.bus_events_fired, {})
+        for ring_source in ("CallStateChanged", "CallSessionStateChanged", "KeyPressed"):
+            coordinator._subscribed_log_events = (
+                ring_source, "CardEntered", "CodeEntered", "MotionDetected", "DirectoryChanged"
+            )
+            self.assertEqual(coordinator.bus_event_types, ["card_entered", "code_entered", "ring"])
+        coordinator._subscribed_log_events = tuple(self.TYPES)
+        self.assertEqual(coordinator.bus_event_types, sorted(self.TYPES.values()))
+        coordinator._process_log_event(self._event("CardEntered", valid=True))
+        coordinator._process_log_event(self._event("CardEntered", valid=False))
+        counts = coordinator.bus_events_fired
+        self.assertEqual(counts, {"card_entered": 2})
+        counts["card_entered"] = 99
+        coordinator.bus_event_types.clear()
+        self.assertEqual(coordinator.bus_events_fired, {"card_entered": 2})
+        self.assertEqual(coordinator.bus_event_types, sorted(self.TYPES.values()))
+        self.assertEqual(len(hass.bus.events), 2)
 
 
 class DirectoryNameResolutionTests(_CoordinatorTestCase):

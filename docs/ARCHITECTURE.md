@@ -147,10 +147,19 @@ Background task `_async_log_listener_loop`:
    `ConfigurationChanged`, `CapabilitiesChanged`, `DeviceState`,
    volitelně `MotionDetected`).
 2. Smyčka `pull` (server blokuje `timeout=1s`).
-3. `_process_log_event()` **patchuje cache na místě** (např. nastaví
-   `switches[i]["active"]`) a zavolá `async_update_listeners()` → entity se
-   překreslí okamžitě.
-4. Při chybě/odpojení: exponenciální backoff (5 s → max 60 s) a re-subscribe.
+3. `_process_log_event()` patches the cache in place. Each accepted access event
+   and each counted ring immediately fires `2n_intercom_event` on the HA bus,
+   in device order, before the batch publishes coordinator state. Access payloads
+   contain only parsed `AccessEvent` fields (fixed keys, unknown values `null`);
+   ring metadata comes from `ring_event_attributes()`, shared with the doorbell
+   entity. No credentials or raw params are forwarded. Device registry lookup is
+   lazy and retries until the shared device exists. Directory name back-fill
+   updates coordinator state only and never re-fires a bus event.
+4. `_publish_event_state()` publishes the latest state once per pull batch and
+   calls `async_update_listeners()` so entities update. Diagnostics `event_bus`
+   reports the active subscription's bus types and counts since setup, without
+   user data; bus firing does not depend on the doorbell entity being enabled.
+5. Při chybě/odpojení: exponenciální backoff (5 s → max 60 s) a re-subscribe.
    `DeviceState=startup` (reboot) → naplánuje full refresh.
 
 ### 3. Polling (záchranná síť)

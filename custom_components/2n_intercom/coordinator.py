@@ -28,7 +28,9 @@ from .api import (
     coerce_bool,
 )
 from .const import (
+    ACCESS_BUS_EVENT_TYPES,
     ACCESS_LOG_EVENTS,
+    BUS_EVENT_RING,
     CALLED_ID_ALL,
     CAMERA_SOURCES,
     CONF_CAMERA_SOURCE,
@@ -46,6 +48,7 @@ from .const import (
     DEFAULT_LIVE_VIEW_MODE,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    EVENT_2N_INTERCOM,
 )
 from .web import device_web_url
 
@@ -237,6 +240,8 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
             super().__init__(hass, _LOGGER, **coordinator_kwargs)
         self.api = api
         self.config_entry = config_entry
+        self._device_id: str | None = None
+        self._bus_events_fired: dict[str, int] = {}
         self._last_call_state: dict[str, Any] = {}
         self._ring_detected = False
         self._ring_count = 0
@@ -483,6 +488,9 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
             self.hass.async_create_task(self._async_capture_ring_snapshot())
         self._ring_detected = True
         self._last_ring_time = dt_util.utcnow()
+        self._fire_bus_event(
+            BUS_EVENT_RING, self._last_ring_time, self.ring_event_attributes()
+        )
         self._ring_pulse_until = self._last_ring_time + timedelta(
             seconds=DOORBELL_PULSE_DURATION
         )
@@ -685,6 +693,37 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
     # Access control events
     # ------------------------------------------------------------------
 
+    def _resolve_device_id(self) -> str | None:
+        """Resolve the shared device lazily, including events before setup ends."""
+        if self._device_id is not None:
+            return self._device_id
+        if self.config_entry is None:
+            return None
+        from homeassistant.helpers import device_registry as dr
+
+        device = dr.async_get(self.hass).async_get_device(
+            identifiers={(DOMAIN, self.config_entry.entry_id)}
+        )
+        if device is not None:
+            self._device_id = device.id
+        return self._device_id
+
+    def _fire_bus_event(
+        self, event_type: str, timestamp: datetime, data: dict[str, Any]
+    ) -> None:
+        """Publish a parsed user-facing event without raw log parameters."""
+        payload = {
+            "device_id": self._resolve_device_id(),
+            "config_entry_id": (
+                self.config_entry.entry_id if self.config_entry is not None else None
+            ),
+            "type": event_type,
+            "timestamp": timestamp.isoformat(),
+            **data,
+        }
+        self.hass.bus.async_fire(EVENT_2N_INTERCOM, payload)
+        self._bus_events_fired[event_type] = self._bus_events_fired.get(event_type, 0) + 1
+
     @staticmethod
     def _event_timestamp(event: dict[str, Any]) -> datetime:
         """Return the tz-aware event time from ``utcTime`` (fallback: now)."""
@@ -804,6 +843,11 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
             user_uuid=user_uuid,
             user_name=user_name,
             session=session,
+        )
+        data = self._last_access_event.as_dict()
+        del data["event_type"], data["timestamp"]
+        self._fire_bus_event(
+            ACCESS_BUS_EVENT_TYPES[event_name], self._last_access_event.timestamp, data
         )
         return True
 
@@ -1062,7 +1106,8 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
         if is_ringing and ring_allowed:
             # CallStateChanged and CallSessionStateChanged both report one
             # ring; count it and capture the snapshot only on the first.
-            if not self._ring_detected:
+            new_ring = not self._ring_detected
+            if new_ring:
                 self._last_ring_button = (
                     self._session_buttons.get(peer_session_id)
                     if peer_session_id is not None else None
@@ -1072,6 +1117,10 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
                     self.hass.async_create_task(self._async_capture_ring_snapshot())
             self._ring_detected = True
             self._last_ring_time = dt_util.utcnow()
+            if new_ring:
+                self._fire_bus_event(
+                    BUS_EVENT_RING, self._last_ring_time, self.ring_event_attributes()
+                )
             self._ring_pulse_until = (
                 self._last_ring_time
                 + timedelta(seconds=DOORBELL_PULSE_DURATION)
@@ -1629,6 +1678,20 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
         """Return the button number known when the last ring was counted."""
         return self._last_ring_button
 
+    def ring_event_attributes(self) -> dict[str, Any]:
+        """Return the known ring metadata shared by the entity and event bus."""
+        attributes: dict[str, Any] = {}
+        if self.called_peer:
+            attributes["called_peer"] = self.called_peer
+        if self.last_ring_button is not None:
+            attributes["button"] = self.last_ring_button
+        caller_info = self.caller_info
+        if "name" in caller_info:
+            attributes["caller_name"] = caller_info["name"]
+        if "number" in caller_info:
+            attributes["caller_number"] = caller_info["number"]
+        return attributes
+
     @property
     def call_state(self) -> str | None:
         """Return the last detected call state."""
@@ -1735,6 +1798,25 @@ class TwoNIntercomCoordinator(DataUpdateCoordinator[TwoNIntercomData]):  # type:
     def subscribed_log_events(self) -> tuple[str, ...]:
         """Return the events of the currently active log subscription."""
         return self._subscribed_log_events
+
+    @property
+    def bus_event_types(self) -> list[str]:
+        """Return the user-facing types supported by the current subscription."""
+        types = {
+            ACCESS_BUS_EVENT_TYPES[event]
+            for event in self._subscribed_log_events
+            if event in ACCESS_BUS_EVENT_TYPES
+        }
+        if {"CallStateChanged", "CallSessionStateChanged", KEY_PRESSED_EVENT}.intersection(
+            self._subscribed_log_events
+        ):
+            types.add(BUS_EVENT_RING)
+        return sorted(types)
+
+    @property
+    def bus_events_fired(self) -> dict[str, int]:
+        """Return counts since setup without retaining any event payloads."""
+        return dict(self._bus_events_fired)
 
     @property
     def ring_snapshot(self) -> bytes | None:

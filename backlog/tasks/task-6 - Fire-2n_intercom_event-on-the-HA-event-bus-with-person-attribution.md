@@ -1,11 +1,11 @@
 ---
 id: TASK-6
 title: Fire 2n_intercom_event on the HA event bus with person attribution
-status: To Do
+status: In Progress
 assignee:
   - '@copilot'
-created_date: 2026-08-30 09:27
-updated_date: '2026-11-01T19:53:00Z'
+created_date: '2026-08-30 09:27'
+updated_date: '2026-11-01 20:12'
 labels:
   - access-control
   - automation
@@ -96,6 +96,8 @@ Out of scope: device triggers, the access event entity (TASK-5), security events
 11. Docs: `README.md` new subsection under "Automation Examples": "Event bus: `2n_intercom_event`" with the D3 type table, the D4 payload table, name sources (D8), what is never included (D5), that HA's recorder stores the events incl. user names, and two YAML examples (`platform: event`, `event_type: 2n_intercom_event`, `event_data: {type: user_authenticated, user_name: ...}`; `event_data: {type: code_entered, granted: false}`); one line in the "Access control" feature bullet. `docs/ARCHITECTURE.md` section "2. Události": the bus event step. `docs/API_REFERENCE.md` event -> action table: the bus type per access event and for the ring.
 
 Must not change: ring detection rules and counting (TASK-31, the TASK-77 button logic, `called_id`, one ring per press, `KEYPRESS_RING_HOLD`), the snapshot, the TASK-4 parsing and `AccessEvent`, the subscribed event list, the doorbell entity behaviour, `entry.data`/`entry.options`, translations (no new strings needed). One bad event must never break the subscription.
+
+Headless execution: implement the approved steps above on the current task branch, run the Python 3.12 unit/validate/compile gates, record evidence in implementation notes, and commit locally without pushing. Leave criteria unchecked and status In Progress; E2E, independent review and manual criteria belong to the orchestrator/tester/Jan.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -104,4 +106,29 @@ Must not change: ring detection rules and counting (TASK-31, the TASK-77 button 
 2026-10-24 (Jan): in scope of v1.6.0 (access and security events in automations are the main feature of the version). Not ready yet: needs analysis (payload schema and event types checked against log events from the E2E intercom and the 2N Logged Events manual), implementation plan and verifier tags on every criterion before it is assigned to @copilot. Order: TASK-6, then TASK-5 and TASK-7.
 
 2026-11-01 (Claude): analysis done (code on main fbbcd0b, 2N manual 5.10.1 api log caps). Payload schema and type names are decisions D1-D9 in the description; verifier tags on every criterion. Ready for @copilot. TASK-77 is on main: the ring attributes incl. `button` move into the coordinator helper `ring_event_attributes()`, used by both the doorbell entity and the bus ring event (AC #6).
+
+Implemented TASK-6 D1-D9: constants for all ten access types plus ring; immediate per-parsed-access firing in pull order; lazy device_id resolution with only successful lookup cached; fixed access schema from AccessEvent; shared ring_event_attributes() for bus/entity; subscription-derived event_bus types and per-fired-type counts. Ring rules, snapshots, access parsing, directory back-fill behaviour and subscription selection remain unchanged. No new event payload logging was added.
+
+Added 14 unit tests across the existing access, coordinator, keypress, event and diagnostics modules, plus recording bus and per-Hass device registry stubs. Existing test assertions were not weakened or removed. Added independent read-only E2E test_event_bus_types_match_device_log_caps in e2e/tests/test_50_access_control.py; it checks the local mapping against device log/caps and integer counts after subscription, with KeyPressed default-off. No E2E/network/physical action was run on the VM.
+
+Updated README Event bus automation subsection (type/payload tables, name sources, credential exclusion, recorder privacy and two YAML examples), architecture event flow and API event/action mapping. No manifest, CHANGELOG, translations or protected paths changed.
+
+Local evidence: Python 3.12.15; python3 -m unittest discover -s tests -t tests passed all 825 tests; python3 validate.py passed; python3 -m py_compile custom_components/2n_intercom/*.py passed; the new E2E test file also compiles; git diff --check passed.
+
+Evidence map for the independent reviewer (criteria remain unchecked):
+AC #1: AccessBusEventTests.test_all_access_types_fire_once_with_exact_parsed_payload and test_one_pull_batch_fires_every_event_in_device_order.
+AC #2: AccessBusEventTests.test_all_access_types_fire_once_with_exact_parsed_payload and test_unknown_access_fields_are_present_as_null.
+AC #3: AccessBusEventTests.test_names_use_event_then_directory_without_backfill_refiring, with existing DirectoryNameResolutionTests unchanged.
+AC #4: AccessBusEventTests.test_credentials_and_raw_parameters_never_reach_bus_or_logs; no new payload/user logging in the production diff.
+AC #5: AccessBusEventTests.test_rejected_events_do_not_fire_or_break_next_event_in_batch and test_non_user_facing_events_never_fire.
+AC #6: RingBusEventTests (two presses with doorbell disabled, incoming/filter exclusion), KeyPressedRingTests.test_bus_keypress_ring_once_in_either_order_with_call_events, DoorbellEventTests.test_bus_and_entity_share_ring_attributes_including_button (info=2, caller metadata, shared helper), plus unchanged ring/keypad tests.
+AC #7: AccessBusEventTests.test_device_id_retried_until_found_then_cached (correct identifier pair, another-entry exclusion, early null and later cache).
+AC #8: AccessBusEventTests.test_bus_types_follow_subscription_and_counts_are_defensive_copies and DiagnosticsTests.test_event_bus_diagnostics_use_subscription_and_integer_counts_only.
+AC #9: New read-only E2E test added; execution and whole E2E result pending e2e-pi.
+AC #10: README, docs/ARCHITECTURE.md and docs/API_REFERENCE.md diff; no CHANGELOG/manifest change.
+AC #11: Full 825-test suite and all required local gates passed as above.
+AC #12: Pending tester after merge; not attempted on the VM.
+AC #13: Pending Jan physical/call/credential/relay verification; not attempted on the VM.
+
+Task intentionally remains In Progress with all acceptance criteria unchecked for orchestrator review/finalization.
 <!-- SECTION:NOTES:END -->

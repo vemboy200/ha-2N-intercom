@@ -14,9 +14,11 @@ from _stubs import (
     API_PATH,
     CONST_PATH,
     COORDINATOR_PATH,
+    EventBus,
     ensure_package,
     install_api_stubs,
     install_dt_util_stub,
+    install_device_registry_stub,
     install_issue_registry_stub,
     load_module,
 )
@@ -67,6 +69,8 @@ def _install_homeassistant_stubs() -> None:
         def __init__(self, hass, logger, name, update_interval) -> None:
             del logger, name, update_interval
             self.hass = hass
+            if not hasattr(hass, "bus"):
+                hass.bus = EventBus()
             self.data = None
             self.last_update_success = True
 
@@ -84,12 +88,7 @@ def _install_homeassistant_stubs() -> None:
     sys.modules["homeassistant.helpers.update_coordinator"] = update_coordinator
     ensure_package("homeassistant.helpers")
 
-    device_registry = types.ModuleType("homeassistant.helpers.device_registry")
-    CONNECTION_NETWORK_MAC = "mac"
-    DeviceInfo = dict
-    device_registry.CONNECTION_NETWORK_MAC = CONNECTION_NETWORK_MAC
-    device_registry.DeviceInfo = DeviceInfo
-    sys.modules["homeassistant.helpers.device_registry"] = device_registry
+    install_device_registry_stub()
 
 
 def load_coordinator_module():
@@ -498,6 +497,54 @@ def _button_press_sequence(info=_UNDEFINED, *, session=32):
             "state": "terminated", **session_info,
         }},
     ]
+
+
+class RingBusEventTests(unittest.IsolatedAsyncioTestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.module = load_coordinator_module()
+
+    async def test_one_bus_ring_per_counted_press_without_doorbell_entity(self) -> None:
+        hass = types.SimpleNamespace(bus=EventBus())
+        coordinator = self.module.TwoNIntercomCoordinator(
+            hass, types.SimpleNamespace(),
+            config_entry=types.SimpleNamespace(entry_id="entry-1", options={"enable_doorbell": False}),
+        )
+        for session in (32, 33):
+            for event in _button_press_sequence("2", session=session):
+                coordinator._process_log_event(event)
+        self.assertEqual(coordinator.ring_count, 2)
+        self.assertEqual(len(hass.bus.events), 2)
+        for name, payload in hass.bus.events:
+            self.assertEqual(name, "2n_intercom_event")
+            self.assertEqual(set(payload), {
+                "device_id", "config_entry_id", "type", "timestamp", "called_peer", "button",
+            })
+            self.assertEqual(payload["type"], "ring")
+            self.assertEqual(payload["button"], 2)
+            self.assertEqual(payload["called_peer"], "100")
+            self.assertEqual(payload["config_entry_id"], "entry-1")
+            self.assertIsNotNone(datetime.fromisoformat(payload["timestamp"]).tzinfo)
+        self.assertEqual(coordinator.bus_events_fired, {"ring": 2})
+
+    async def test_incoming_and_called_id_filtered_rings_fire_nothing(self) -> None:
+        for incoming, called_id in ((True, None), (True, "100"), (False, "200")):
+            with self.subTest(incoming=incoming, called_id=called_id):
+                hass = types.SimpleNamespace(bus=EventBus())
+                coordinator = self.module.TwoNIntercomCoordinator(
+                    hass, types.SimpleNamespace(), called_id=called_id
+                )
+                for name, signal in (
+                    ("CallStateChanged", {"direction": "incoming" if incoming else "outgoing"}),
+                    ("CallSessionStateChanged", {"originator": "incoming" if incoming else "button"}),
+                ):
+                    coordinator._process_log_event({
+                        "event": name,
+                        "params": {"state": "ringing", "session": 1, "peer": "100", **signal},
+                    })
+                self.assertEqual(coordinator.ring_count, 0)
+                self.assertEqual(hass.bus.events, [])
+                self.assertEqual(coordinator.bus_events_fired, {})
 
 
 class SessionButtonTests(unittest.IsolatedAsyncioTestCase):

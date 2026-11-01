@@ -171,6 +171,43 @@ def install_issue_registry_stub() -> types.ModuleType:
     return registry
 
 
+class EventBus:
+    """Record bus events in firing order without a Home Assistant instance."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    def async_fire(self, event_type: str, event_data: dict) -> None:
+        self.events.append((event_type, dict(event_data)))
+
+
+def install_device_registry_stub() -> types.ModuleType:
+    """Register a registry whose devices are isolated per test Home Assistant."""
+    helpers = ensure_package("homeassistant.helpers")
+    registry = types.ModuleType("homeassistant.helpers.device_registry")
+    registry.CONNECTION_NETWORK_MAC = "mac"
+    registry.DeviceInfo = dict
+
+    class DeviceRegistry:
+        def __init__(self) -> None:
+            self.devices: dict[tuple[str, str], types.SimpleNamespace] = {}
+
+        def async_get_device(self, *, identifiers):
+            return next(
+                (self.devices[key] for key in identifiers if key in self.devices), None
+            )
+
+    def async_get(hass):
+        if not hasattr(hass, "_test_device_registry"):
+            hass._test_device_registry = DeviceRegistry()
+        return hass._test_device_registry
+
+    registry.async_get = async_get
+    helpers.device_registry = registry
+    sys.modules["homeassistant.helpers.device_registry"] = registry
+    return registry
+
+
 def install_dt_util_stub() -> types.ModuleType:
     """Register a minimal ``homeassistant.util.dt`` (tz-aware helpers)."""
 
