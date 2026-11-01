@@ -58,6 +58,8 @@ class TwoNIntercomDoorbellEvent(TwoNIntercomEntity, EventEntity):  # type: ignor
             attributes: dict[str, Any] = {}
             if self.coordinator.called_peer:
                 attributes["called_peer"] = self.coordinator.called_peer
+            if self.coordinator.last_ring_button is not None:
+                attributes["button"] = self.coordinator.last_ring_button
             caller_info = self.coordinator.caller_info
             if "name" in caller_info:
                 attributes["caller_name"] = caller_info["name"]
