@@ -12,10 +12,12 @@ from _stubs import (
     API_PATH,
     CONST_PATH,
     COORDINATOR_PATH,
+    EventBus,
     INIT_PATH,
     ensure_package,
     install_api_stubs,
     install_dt_util_stub,
+    install_device_registry_stub,
     load_module,
 )
 
@@ -184,6 +186,8 @@ class FakeCoordinator:
         self.log_caps = None
         self.subscribed_log_events = ()
         self.last_access_event = None
+        self.bus_event_types = []
+        self.bus_events_fired = {}
         self.ring_snapshot = None
         self.ring_snapshot_time = None
 
@@ -559,6 +563,47 @@ class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["entry"]["options"]["grant_access_user"], "**REDACTED**")
         self.assertTrue(result["ring_snapshot"]["captured"])
         self.assertNotIn("jpeg", str(result["ring_snapshot"]))
+
+    async def test_event_bus_diagnostics_use_subscription_and_integer_counts_only(self) -> None:
+        coordinator_module = sys.modules["custom_components.2n_intercom.coordinator"]
+        install_device_registry_stub()
+        entry = FakeConfigEntry()
+        entry.entry_id = "entry-1"
+        hass = types.SimpleNamespace(bus=EventBus())
+        api_module = sys.modules["custom_components.2n_intercom.api"]
+        coordinator = coordinator_module.TwoNIntercomCoordinator(
+            hass, types.SimpleNamespace(camera_transport_info=api_module.CameraTransportInfo()),
+            config_entry=entry,
+        )
+        coordinator._log_caps = frozenset({"CardEntered", "FingerEntered", "CallStateChanged"})
+        entry.runtime_data = coordinator_module.TwoNIntercomRuntimeData(
+            coordinator=coordinator, api=coordinator.api
+        )
+        result = await self.diag_module.async_get_config_entry_diagnostics(hass, entry)
+        self.assertEqual(result["event_bus"], {
+            "event": "2n_intercom_event", "types": [], "fired": {},
+        })
+
+        coordinator._subscribed_log_events = ("CardEntered", "CallStateChanged")
+        coordinator._directory_names = {"test-identity": "Test Identity Name"}
+        for valid in (True, False):
+            coordinator._process_log_event({
+                "event": "CardEntered",
+                "params": {"valid": valid, "uuid": "test-identity", "uid": "PRIVATE-CARD"},
+            })
+        coordinator._process_log_event({
+            "event": "CallStateChanged",
+            "params": {"state": "ringing", "direction": "outgoing", "session": 1},
+        })
+        result = await self.diag_module.async_get_config_entry_diagnostics(hass, entry)
+        bus = result["event_bus"]
+        self.assertEqual(bus, {
+            "event": "2n_intercom_event", "types": ["card_entered", "ring"],
+            "fired": {"card_entered": 2, "ring": 1},
+        })
+        self.assertTrue(all(type(value) is int for value in bus["fired"].values()))
+        for private in ("test-identity", "Test Identity Name", "PRIVATE-CARD", "user_uuid", "user_name"):
+            self.assertNotIn(private, repr(bus))
 
 
 if __name__ == "__main__":

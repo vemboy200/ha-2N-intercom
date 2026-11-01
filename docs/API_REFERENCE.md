@@ -81,22 +81,39 @@ The device rejects the whole filter with code 12 if any event is unsupported, so
 
 Mapování událost → akce koordinátoru:
 
-| Událost | Akce |
-|---|---|
-| `CallStateChanged` / `CallSessionStateChanged` | ring detekce, `active_session_id`, peer |
-| `KeyPressed` | Opt-in ring on call-button keys `%1` through `%54`, including a snapshot when enabled; no peer filter. Keypad digits, `*`, `#` never ring; key values are never logged |
-| `SwitchStateChanged` | patch `switch_status[i].active` |
-| `InputChanged` / `OutputChanged` | patch `io_status` portu |
-| `RegistrationStateChanged` | patch SIP účtu v `phone_status` |
-| `ConfigurationChanged` / `CapabilitiesChanged` | refresh switch/io caps (přidá/odebere relé) |
-| `DeviceState=startup` | full refresh (zařízení se rebootlo) |
-| `MotionDetected` (`state=in/out`) | binary sensor pohybu |
-| `CardEntered` / `CodeEntered` / `MobKeyEntered` / `FingerEntered` | `last_access_event` (typ credentialu, `valid` → granted); `uid`, `code`, `authid` se **nikdy neukládají** |
-| `UserAuthenticated` / `UserRejected` / `AccessTaken` | `last_access_event`; typ credentialu se dědí z předchozí události stejné `session` a `ap` |
-| `AccessBlocked` / `AccessLimited` (`state=in/out`) | `last_access_event` (`in` = odepřeno) |
-| `ApiAccessRequested` | `last_access_event` (credential `api`, výsledek grant_access) |
-| `DirectoryChanged` | zahodí cache jmen z `dir/query` |
-| `CallStateChanged` ringing (první) | snímek `camera/snapshot` → entita `image.*_last_ring` (jen se zapnutou kamerou) |
+| Událost | Akce | `2n_intercom_event` type |
+|---|---|---|
+| `CallStateChanged` / `CallSessionStateChanged` | ring detekce, `active_session_id`, peer | `ring` once per counted ring |
+| `KeyPressed` | Opt-in ring on call-button keys `%1` through `%54`, including a snapshot when enabled; no peer filter. Keypad digits, `*`, `#` never ring; key values are never logged | `ring` only when counted |
+| `SwitchStateChanged` | patch `switch_status[i].active` | None |
+| `InputChanged` / `OutputChanged` | patch `io_status` portu | None |
+| `RegistrationStateChanged` | patch SIP účtu v `phone_status` | None |
+| `ConfigurationChanged` / `CapabilitiesChanged` | refresh switch/io caps (přidá/odebere relé) | None |
+| `DeviceState=startup` | full refresh (zařízení se rebootlo) | None |
+| `MotionDetected` (`state=in/out`) | binary sensor pohybu | None |
+| `CardEntered` | `last_access_event`, credential `card`, `valid` -> granted | `card_entered` |
+| `CodeEntered` | `last_access_event`, credential `code`, `valid` -> granted | `code_entered` |
+| `MobKeyEntered` | `last_access_event`, credential `mobile_key`, `valid` -> granted | `mobile_key_entered` |
+| `FingerEntered` | `last_access_event`, credential `fingerprint`, `valid` -> granted | `fingerprint_entered` |
+| `UserAuthenticated` | `last_access_event`, granted; inherits credential from the same `session` and `ap` | `user_authenticated` |
+| `UserRejected` | `last_access_event`, denied; inherits credential from the same `session` and `ap` | `user_rejected` |
+| `AccessTaken` | `last_access_event`; inherits credential from the same `session` and `ap` | `access_taken` |
+| `AccessBlocked` (`state=in/out`) | `last_access_event` (`in` = denied) | `access_blocked` |
+| `AccessLimited` (`state=in/out`) | `last_access_event` (`in` = denied) | `access_limited` |
+| `ApiAccessRequested` | `last_access_event` (credential `api`, výsledek grant_access) | `api_access_requested` |
+| `DirectoryChanged` | zahodí cache jmen z `dir/query` | None |
+| `CallStateChanged` ringing (první) | snímek `camera/snapshot` → entita `image.*_last_ring` (jen se zapnutou kamerou) | No additional event |
+
+The bus fires immediately for every accepted access log event, not just the last
+event of a pull batch. Every payload includes `device_id`, `config_entry_id`,
+`type` and a UTC ISO 8601 `timestamp`; access fields match the parsed
+`AccessEvent` (except `event_type`), including `null` for unknowns. Ring fields
+are the shared doorbell attributes, omitted when unknown. Neither `code`, `uid`,
+`authid`, `reader` nor other raw params are included; names/UUIDs are never
+logged. The device provides `name` on `UserAuthenticated` / `UserRejected`;
+other access events use the directory cache. Later name back-fill never fires
+again. Diagnostics `event_bus` exposes only the channel, subscribed types and
+counts. See the README event bus examples and recorder privacy note.
 
 Jména uživatelů: z parametru `name` události, jinak z cache `dir/query` (klíč =
 uuid malými písmeny; dir/query vrací uuid velkými, log události malými). Neznámé

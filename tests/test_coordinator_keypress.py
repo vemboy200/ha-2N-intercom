@@ -77,6 +77,28 @@ class KeyPressedRingTests(_CoordinatorTestCase):
         self.addAsyncCleanup(coordinator.async_stop_log_listener)
         return coordinator, hass, api
 
+    async def test_bus_keypress_ring_once_in_either_order_with_call_events(self) -> None:
+        for key_first in (True, False):
+            with self.subTest(key_first=key_first):
+                coordinator, hass, _ = self._make_ring(ring_snapshot_enabled=False)
+                call_events = [
+                    _call("CallSessionStateChanged", "ringing", originator="button", info="1"),
+                    _call("CallStateChanged", "ringing", direction="outgoing"),
+                ]
+                events = [_key("%1"), *call_events] if key_first else [*call_events, _key("%1")]
+                coordinator._process_log_event(events[0])
+                first_ring_time = coordinator.last_ring_time
+                for event in events[1:]:
+                    coordinator._process_log_event(event)
+                self.assertEqual(coordinator.ring_count, 1)
+                self.assertEqual(len(hass.bus.events), 1)
+                name, payload = hass.bus.events[0]
+                self.assertEqual(name, "2n_intercom_event")
+                self.assertEqual(payload["type"], "ring")
+                self.assertEqual(payload["button"], 1)
+                self.assertEqual(payload["timestamp"], first_ring_time.isoformat())
+                self.assertEqual(coordinator.bus_events_fired, {"ring": 1})
+
     async def test_call_button_press_rings_once_with_snapshot(self) -> None:
         coordinator, hass, api = self._make_ring()
 

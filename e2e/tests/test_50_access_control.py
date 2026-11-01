@@ -1,4 +1,4 @@
-"""Access control (TASK-4/8) and last-ring image (TASK-9): HA says X <-> 2N API says X.
+"""Access control (TASK-4/6/8) and last-ring image (TASK-9): HA says X <-> 2N API says X.
 
 Each test skips when the deployed integration lacks the feature (no
 ``access_control`` diagnostics section, no ``image`` platform, no
@@ -25,6 +25,18 @@ ACCESS_EVENTS = {
     "AccessBlocked",
     "AccessLimited",
     "ApiAccessRequested",
+}
+ACCESS_BUS_TYPES = {
+    "CardEntered": "card_entered",
+    "CodeEntered": "code_entered",
+    "MobKeyEntered": "mobile_key_entered",
+    "FingerEntered": "fingerprint_entered",
+    "UserAuthenticated": "user_authenticated",
+    "UserRejected": "user_rejected",
+    "AccessTaken": "access_taken",
+    "AccessBlocked": "access_blocked",
+    "AccessLimited": "access_limited",
+    "ApiAccessRequested": "api_access_requested",
 }
 
 
@@ -72,6 +84,36 @@ def test_keypress_option_defaults_off_without_changing_device_subscription(ha, e
     assert set(events) <= device_log_caps, "HA subscribed to unsupported device events"
     for event in {"CallStateChanged", "CallSessionStateChanged"} & device_log_caps:
         assert event in events, f"Default-off HA is missing supported {event}"
+
+
+def test_event_bus_types_match_device_log_caps(ha, entry, twon):
+    """Read-only channel discovery; no button, credential, call or relay action."""
+    if "event_bus" not in _diagnostics(ha, entry["entry_id"]):
+        pytest.skip("deployed integration has no event_bus diagnostics (TASK-6 not deployed)")
+    assert (entry.get("options") or {}).get("ring_on_keypress", False) is False
+    device_log_caps = set(twon.log_caps())
+    expected = {
+        bus_type for event, bus_type in ACCESS_BUS_TYPES.items() if event in device_log_caps
+    }
+    if {"CallStateChanged", "CallSessionStateChanged"} & device_log_caps:
+        expected.add("ring")
+
+    def bus_after_subscription():
+        diagnostics = _diagnostics(ha, entry["entry_id"])
+        if diagnostics.get("access_control", {}).get("subscribed_events"):
+            return diagnostics["event_bus"]
+        return None
+
+    bus = ha.wait_for(
+        bus_after_subscription, timeout=60, what="event bus diagnostics after log subscription"
+    )
+    assert bus["event"] == "2n_intercom_event"
+    assert bus["types"] == sorted(expected), (
+        f"HA bus types {bus['types']}, device log/caps maps to {sorted(expected)}"
+    )
+    assert isinstance(bus["fired"], dict)
+    assert set(bus["fired"]) <= expected
+    assert all(type(count) is int and count >= 0 for count in bus["fired"].values())
 
 
 def test_last_ring_image_follows_camera(ha, entry, registry):

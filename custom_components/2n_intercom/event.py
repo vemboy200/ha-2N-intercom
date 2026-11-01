@@ -1,7 +1,7 @@
 """Doorbell event platform for 2N Intercom."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.core import HomeAssistant, callback
@@ -55,15 +55,5 @@ class TwoNIntercomDoorbellEvent(TwoNIntercomEntity, EventEntity):  # type: ignor
         """Emit only for a new ring, not for duplicate call or poll updates."""
         if self.coordinator.ring_count > self._last_ring_count:
             self._last_ring_count = self.coordinator.ring_count
-            attributes: dict[str, Any] = {}
-            if self.coordinator.called_peer:
-                attributes["called_peer"] = self.coordinator.called_peer
-            if self.coordinator.last_ring_button is not None:
-                attributes["button"] = self.coordinator.last_ring_button
-            caller_info = self.coordinator.caller_info
-            if "name" in caller_info:
-                attributes["caller_name"] = caller_info["name"]
-            if "number" in caller_info:
-                attributes["caller_number"] = caller_info["number"]
-            self._trigger_event("ring", attributes)
+            self._trigger_event("ring", self.coordinator.ring_event_attributes())
         self.async_write_ha_state()
