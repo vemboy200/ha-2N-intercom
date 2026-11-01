@@ -3,11 +3,11 @@ id: TASK-77
 title: >-
   Doorbell event: add a button attribute with the pressed call button number
   (first slice of DRAFT-1)
-status: In Progress
+status: To Test
 assignee:
   - '@copilot'
 created_date: '2026-11-01T19:26:00Z'
-updated_date: '2026-11-01 19:39'
+updated_date: '2026-11-01 19:43'
 labels:
   - ring-detection
   - doorbell
@@ -50,15 +50,15 @@ Why: an intercom with more than one call button cannot tell an automation which 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A press sequence with `originator=button` and `info="1"` on `CallSessionStateChanged` makes the emitted `ring` event carry `button` = 1 (int); the same sequence with `info="2"` and `info="12"` gives 2 and 12; unit tests replay the captured event order [unit]
-- [ ] #2 A ring that is counted on the `CallStateChanged` ringing event, before the session ringing event, still reports the button stored from the earlier `initialized` session event of the same session [unit]
-- [ ] #3 Without a valid button the `ring` event has no `button` attribute and is otherwise unchanged: no `info`, empty, non-numeric (`"abc"`) and out-of-range (`"0"`, `"151"`) values are ignored without an error, and a call into the intercom (`originator=incoming`) still never rings [unit]
-- [ ] #4 A ring never reports the button of an earlier press: a second press without `info` after a press with `info="2"` has no `button`; two sessions at the same time keep their own buttons; the stored session button is removed on the terminal session state [unit]
-- [ ] #5 With `ring_on_keypress` on, `KeyPressed` key `%2` rings with `button` = 2; keypad keys still never ring; when call events and `KeyPressed` of one press arrive in either order there is one ring and the button is unchanged by the second event [unit]
-- [ ] #6 The doorbell event entity adds `button` to the `ring` attributes only when the coordinator has one, next to `called_peer`, `caller_name` and `caller_number`; no new entity, event type, option or translation key is added (checked in the PR diff) [unit]
-- [ ] #7 The debug line of the call-event branch includes `button`; no keypad key value is logged (`test_key_values_are_never_logged` stays green); `called_id` filter tests and the TASK-31 ring tests stay green unchanged [unit]
-- [ ] #8 README.md, docs/ARCHITECTURE.md and docs/API_REFERENCE.md describe the `button` attribute and state that only button 1 has been verified on real hardware (checked in the PR diff) [unit]
-- [ ] #9 The existing E2E doorbell entity checks stay green on the E2E intercom (`test_10_entities::test_doorbell_event_is_available_and_shares_camera_device`); the unit and E2E suites and `validate.py` pass [e2e]
+- [x] #1 A press sequence with `originator=button` and `info="1"` on `CallSessionStateChanged` makes the emitted `ring` event carry `button` = 1 (int); the same sequence with `info="2"` and `info="12"` gives 2 and 12; unit tests replay the captured event order [unit]
+- [x] #2 A ring that is counted on the `CallStateChanged` ringing event, before the session ringing event, still reports the button stored from the earlier `initialized` session event of the same session [unit]
+- [x] #3 Without a valid button the `ring` event has no `button` attribute and is otherwise unchanged: no `info`, empty, non-numeric (`"abc"`) and out-of-range (`"0"`, `"151"`) values are ignored without an error, and a call into the intercom (`originator=incoming`) still never rings [unit]
+- [x] #4 A ring never reports the button of an earlier press: a second press without `info` after a press with `info="2"` has no `button`; two sessions at the same time keep their own buttons; the stored session button is removed on the terminal session state [unit]
+- [x] #5 With `ring_on_keypress` on, `KeyPressed` key `%2` rings with `button` = 2; keypad keys still never ring; when call events and `KeyPressed` of one press arrive in either order there is one ring and the button is unchanged by the second event [unit]
+- [x] #6 The doorbell event entity adds `button` to the `ring` attributes only when the coordinator has one, next to `called_peer`, `caller_name` and `caller_number`; no new entity, event type, option or translation key is added (checked in the PR diff) [unit]
+- [x] #7 The debug line of the call-event branch includes `button`; no keypad key value is logged (`test_key_values_are_never_logged` stays green); `called_id` filter tests and the TASK-31 ring tests stay green unchanged [unit]
+- [x] #8 README.md, docs/ARCHITECTURE.md and docs/API_REFERENCE.md describe the `button` attribute and state that only button 1 has been verified on real hardware (checked in the PR diff) [unit]
+- [x] #9 The existing E2E doorbell entity checks stay green on the E2E intercom (`test_10_entities::test_doorbell_event_is_available_and_shares_camera_device`); the unit and E2E suites and `validate.py` pass [e2e]
 - [ ] #10 After the merge, the staging HA system log shows no error from `2n_intercom` about the log subscription or the doorbell event entity after a restart [tester]
 - [ ] #11 On the real intercom Jan presses the call button once: the doorbell event in Home Assistant shows the attribute `button: 1`, also with `ring_on_keypress` on; a second press shows it again and a call into the intercom from My2N does not ring [jan]
 <!-- AC:END -->
@@ -84,3 +84,20 @@ Local gates passed with Python 3.12.15: python3 -m unittest discover -s tests -t
 
 AC #9: the existing read-only E2E test_10_entities::test_doorbell_event_is_available_and_shares_camera_device is retained unchanged, as requested by the task. E2E was not run from the VM; e2e-pi must provide the remaining evidence. New button metadata is proven locally by unit replay; a real press is intentionally the manual AC #11, not an automated device action. AC #10 remains with the tester after merge, and AC #11 remains with Jan. No acceptance criteria were checked and the task remains In Progress for independent review and orchestration.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented by the headless coder. Checks green on 14d4c62ef after 0 fix round(s): e2e-pi=pass, validate=pass, validate=pass. PR: https://github.com/mastalir1980/ha-2N-intercom/pull/119. To Test takes effect when the PR is merged.
+AC #1: tests/test_coordinator.py SessionButtonTests.test_captured_button_sequences_store_integer_for_first_ring replays the captured 7-event order (_button_press_sequence) with info 1, 2, 12 and asserts int button from the ring onward, None before it. tests/test_event.py test_captured_sequences_emit_optional_integer_button_with_caller_metadata checks the emitted ring carries the int. Full suite (811 tests) passes locally. (proven)
+AC #2: SessionButtonTests.test_call_ringing_uses_earlier_initialized_session_button: initialized session event stores the button, then CallStateChanged ringing counts the ring and last_ring_button == 12; debug line contains button=12. The replay test also rings on CallStateChanged (index 3) before the session ringing event. (proven)
+AC #3: test_missing_and_invalid_info_leave_button_unknown covers missing, None, '', ' ', 'abc', '0', '151', '1234', non-strings and more: no button, no exception, ring_count still 1. test_only_button_session_events_store_info covers originator=incoming (ring_count 0, no button). test_event shows no 'button' key in the emitted attributes for those values; otherwise attributes are unchanged. (proven)
+AC #4: test_next_press_without_info_clears_previous_button (second press after info '2' gives None, same and different session id), test_concurrent_sessions_keep_their_own_buttons (42-&gt;2, 43-&gt;12), test_terminal_session_state_removes_button_not_individual_call_end (_session_buttons empty after terminal session event), plus test_event test_second_press_without_info_does_not_emit_previous_button. Code: _last_ring_button is reassigned on every counted ring and the session entry is popped on a terminal session state. (proven)
+AC #5: tests/test_coordinator_keypress.py: the assertion for %2 gives last_ring_button 2 (int); test_keypad_keys_never_ring asserts ring_count 0 and button None; test_all_documented_call_button_keys_ring checks the number per key; test_button_is_fixed_when_keypress_and_call_events_arrive_in_either_order and test_duplicate_event_does_not_replace_counted_button assert exactly one ring and an unchanged button in both orders. The existing '_ring_detected' guard remains first in _process_key_pressed_event. (proven)
+AC #6: event.py diff adds only `if self.coordinator.last_ring_button is not None: attributes['button'] = ...` next to called_peer/caller_*. The diff has no change to strings.json, translations/*, icons.json, const.py or platform registration. tests/test_event.py asserts the attribute is present as an int when known and absent otherwise. (proven)
+AC #7: The final debug line in the call-event branch now includes button=%r (asserted in test_call_ringing_uses_earlier_initialized_session_button and the invalid-info test via 'button=None'); the other debug lines are unchanged. test_key_values_are_never_logged is unchanged and green; the only changed existing test lines are the intentional {} -&gt; {'button': 1} expectation in test_event for a captured sequence with info; the called_id filter and TASK-31 tests are untouched and pass. (proven)
+AC #8: The diff adds the button attribute description to README.md (doorbell bullet, ring_on_keypress paragraph, automation example, multi-button bullet), docs/ARCHITECTURE.md and docs/API_REFERENCE.md. Each states that only button 1 has been verified on real hardware. (proven)
+AC #9: The orchestrator reports the unit suite, validate.py and all PR checks incl. e2e-pi green on this head; the diff does not touch e2e/tests, test_10_entities, entity count or event types, so the existing doorbell entity E2E check is unaffected. Locally the 811 unit tests pass. (proven)
+AC #10: [tester] After the merge the tester agent must check the staging HA system log for 2n_intercom errors about the log subscription or the doorbell event entity after a restart. (manual)
+AC #11: [jan] Jan must press the real call button (also with ring_on_keypress on), see `button: 1` on the doorbell event twice, and confirm a call into the intercom from My2N does not ring. (manual)
+<!-- SECTION:FINAL_SUMMARY:END -->
